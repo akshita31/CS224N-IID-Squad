@@ -236,3 +236,36 @@ class BiDAFOutput(nn.Module):
         log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
 
         return log_p1, log_p2
+
+class CharEmbedding(nn.Module):
+    """Character Embedding layer used by BiDAF.
+
+    It takes in an input vector word (or its index) and using the characters in the word, 
+    transforms it to an embedding of a fixed size.
+
+    Args:
+        char_vector: Pretrained character vectors. (maybe one-hot. need to verify this)
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations
+    """
+    def __init__(self, char_vectors, hidden_size, drop_prob):
+        super(CharEmbedding, self).__init__()
+        self.drop_prob = drop_prob
+        self.embed = nn.Embedding.from_pretrained(char_vectors) # this will transform the character indexes to the character vectors
+
+        #now we will feed this as input to the CNN
+
+        # initialize CNN layers here
+        
+
+    def forward(self, x):
+        emb = self.embed(x)   # (batch_size, seq_len, embed_size)
+
+        # Pass the embeddings through the CNN layer..
+        
+        
+        
+        
+        ## code from word embedding 
+
+        return emb
