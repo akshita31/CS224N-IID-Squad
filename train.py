@@ -87,6 +87,7 @@ def main(args):
                                  collate_fn=collate_fn)
 
     # Train
+    # y1 and y2 feel like to be the start and end index
     log.info('Training...')
     steps_till_eval = args.eval_steps
     epoch = step // len(train_dataset)

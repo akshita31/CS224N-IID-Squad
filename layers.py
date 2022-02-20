@@ -27,7 +27,11 @@ class Embedding(nn.Module):
         super(Embedding, self).__init__()
         self.drop_prob = drop_prob
         self.embed = nn.Embedding.from_pretrained(word_vectors)
+
+        # word_vectors include te word_vectors for all words in vocab
+        # word_vectors.size = (num_vocab, embed_size)
         self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
+        # Projection layer has size (embed_size, hidden_size)
         self.hwy = HighwayEncoder(2, hidden_size)
 
     def forward(self, x):
@@ -51,6 +55,12 @@ class HighwayEncoder(nn.Module):
         num_layers (int): Number of layers in the highway encoder.
         hidden_size (int): Size of hidden activations.
     """
+
+    ## Highway Network allows gated input to flow through
+    # Variable g is a gate that has value between 0-1
+    # here we are using a 2 layer highway network
+    # this allows us to stabilize deep neural networks as we pass some part of the input directly
+
     def __init__(self, num_layers, hidden_size):
         super(HighwayEncoder, self).__init__()
         self.transforms = nn.ModuleList([nn.Linear(hidden_size, hidden_size)
@@ -94,6 +104,7 @@ class RNNEncoder(nn.Module):
 
     def forward(self, x, lengths):
         # Save original padded length for use by pad_packed_sequence
+        # x is of size - (batch_size, seq_len, input_size)
         orig_len = x.size(1)
 
         # Sort by length and pack sequence for RNN
@@ -141,16 +152,21 @@ class BiDAFAttention(nn.Module):
         self.bias = nn.Parameter(torch.zeros(1))
 
     def forward(self, c, q, c_mask, q_mask):
+
+        # c is the context. Its size will be (batch_size, context_len, hidden_size) as this is coming from the hidden state of the RNN
+        # q is the query. Its size will be (batch_size, query_len, hidden_size) 
+
         batch_size, c_len, _ = c.size()
         q_len = q.size(1)
         s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
         c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
         q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
-        s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len)
+        s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len) #looks like context2query attention as we are setting the places where query has a pad element to 0 through the mask
         s2 = masked_softmax(s, c_mask, dim=1)       # (batch_size, c_len, q_len)
 
         # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
-        a = torch.bmm(s1, q)
+        a = torch.bmm(s1, q) # a is final context to query attention
+        # a denotes the attention vector for each word of the context to the query
         # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
         b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
 
