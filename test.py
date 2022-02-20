@@ -43,7 +43,7 @@ def main(args):
 
     # Get model
     log.info('Building model...')
-    model = BiDAF(word_vectors=word_vectors,
+    model = BiDAF(word_vectors=word_vectors, ## to do: here BidafChar should be initialized in case of char embedding
                   hidden_size=args.hidden_size)
     model = nn.DataParallel(model, gpu_ids)
     log.info(f'Loading checkpoint from {args.load_path}...')

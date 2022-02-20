@@ -48,7 +48,7 @@ def main(args):
 
     # Get model
     log.info('Building model...') 
-    model = BiDAF(word_vectors=word_vectors,
+    model = BiDAF(word_vectors=word_vectors, ## to do: here BidafChar should be initialized in case of char embedding
                 char_vectors = char_vectors,
                 hidden_size=args.hidden_size,
                 drop_prob=args.drop_prob)
