@@ -5,6 +5,7 @@ import torch.nn.Functional as F
 from layers import HighwayEncoder
 
 
+# This is a private class. Only the WordPlusCharEmbedding should be called by the model
 class _CharEmbedding(nn.Module):
     """Character Embedding layer used by BiDAF.
 
@@ -37,13 +38,13 @@ class _CharEmbedding(nn.Module):
 
         return emb
 
-class WordPlusCharEmdedding(nn.Module):
+class WordPlusCharEmbedding(nn.Module):
     """Combines the Word and Character embedding and then applies a transformation and highway network.
     Output of this layer will be (batch_size, seq_len, hidden_size)
     """
 
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
-        super(WordPlusCharEmdedding, self).__init__()
+        super(WordPlusCharEmbedding, self).__init__()
         self.drop_prob = drop_prob
         self.char_embed_size = 50
         self.word_embed_size = word_vectors.size(1)

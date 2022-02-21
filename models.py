@@ -5,6 +5,7 @@ Author:
 """
 
 import layers
+import layers_char_embed
 import torch
 import torch.nn as nn
 
@@ -93,7 +94,7 @@ class BiDAFWithChar(nn.Module):
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
         super(BiDAFWithChar, self).__init__()
-        self.emb = layers.CharEmbedding(word_vectors=word_vectors,
+        self.emb = layers_char_embed.WordPlusCharEmbedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
                                     hidden_size=hidden_size,
                                     drop_prob=drop_prob)
