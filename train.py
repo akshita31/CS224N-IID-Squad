@@ -54,7 +54,8 @@ def main(args):
         model = BiDAFWithChar(word_vectors=word_vectors,
                 char_vectors = char_vectors,
                 hidden_size=args.hidden_size,
-                drop_prob=args.drop_prob)
+                drop_prob=args.drop_prob,
+                device = device)
     else:
         log.info('Performing training without using Character Embedding')
         model = BiDAF(word_vectors=word_vectors,

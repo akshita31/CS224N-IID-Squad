@@ -19,13 +19,15 @@ class _CharEmbedding(nn.Module):
         char_embed_size: dimension of the output embeddings for each word.
     """
     
-    def __init__(self, char_vectors, drop_prob, char_embed_size) -> None:
+    def __init__(self, char_vectors, drop_prob, char_embed_size, device) -> None:
         super(_CharEmbedding, self).__init__()
         self.output_embed_size = char_embed_size # whatever dimension we will use for the word vector, same we will use for the char vectors (output of the Char Embed layer) 
-
+        self.device = device
         self.chars_per_word = 16 # this is from the char_idx array
         self.char_embed = nn.Embedding.from_pretrained(char_vectors) #output will be (batch_size, seq_length, chars_per_word, input_embedding_len)
 
+        #print('Chars per word is', self.chars_per_word)
+        #print('Out channel is', self.output_embed_size)
         self.cnn = nn.Sequential(nn.Conv1d(in_channels = self.chars_per_word, out_channels =  self.output_embed_size, kernel_size = 3),# check dimensions passed here
                                 nn.Dropout(p = drop_prob),
                                 nn.AdaptiveMaxPool1d(1)) # output will be (batch_size*seq_length, char_embed_size (or num_filters), 1)
@@ -51,17 +53,17 @@ class WordPlusCharEmbedding(nn.Module):
     Output of this layer will be (batch_size, seq_len, hidden_size)
     """
 
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, device):
         super(WordPlusCharEmbedding, self).__init__()
         self.drop_prob = drop_prob
-        self.char_embed_size = hidden_size/2
+        self.char_embed_size =(int) (hidden_size/2)
         self.word_embed_size = word_vectors.size(1)
         self.hidden_size = hidden_size
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
-        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, char_embed_size = self.char_embed_size)
+        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, char_embed_size = self.char_embed_size, device = device)
         
-        self.word_proj = nn.Linear(self.word_embed_size, hidden_size/2, bias=False)
+        self.word_proj = nn.Linear(self.word_embed_size, (int)(hidden_size/2), bias=False)
 
         # self.proj = nn.Linear(self.word_embed_size + self.char_embed_size, hidden_size, bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
@@ -70,13 +72,13 @@ class WordPlusCharEmbedding(nn.Module):
         word_emb = self.word_embed(word_idxs)
         char_emb = self.char_embed(char_idxs)
         
-        (batch_size, seq_len, _) = word_emb.shape()
+        (batch_size, seq_len, _) = word_emb.shape
         assert(char_emb.shape == (batch_size, seq_len, self.char_embed_size))
         
         word_projection = self.word_proj(word_emb)
         
         #concatenate to produce the final embedding
-        emb = torch.cat(word_projection, char_emb, dim = 2)
+        emb = torch.cat((word_projection, char_emb), dim = 2)
         assert(emb.shape == (batch_size, seq_len, self.hidden_size))
 
         emb = F.dropout(emb, self.drop_prob, self.training)
