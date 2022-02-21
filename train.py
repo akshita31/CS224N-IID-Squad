@@ -17,7 +17,7 @@ import util
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF
+from models import BiDAF, BiDAFWithChar
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
@@ -47,8 +47,17 @@ def main(args):
     char_vectors = util.torch_from_json(args.char_emb_file)
 
     # Get model
-    log.info('Building model...') 
-    model = BiDAF(word_vectors=word_vectors, ## to do: here BidafChar should be initialized in case of char embedding
+    log.info('Building model...')
+
+    if args.name == "CharEmbedding":
+        log.info('Performing training using Character Embedding')
+        model = BiDAFWithChar(word_vectors=word_vectors,
+                char_vectors = char_vectors,
+                hidden_size=args.hidden_size,
+                drop_prob=args.drop_prob)
+    else:
+        log.info('Performing training without using Character Embedding')
+        model = BiDAF(word_vectors=word_vectors,
                 char_vectors = char_vectors,
                 hidden_size=args.hidden_size,
                 drop_prob=args.drop_prob)

@@ -89,6 +89,7 @@ class BiDAFWithChar(nn.Module):
 
     Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
+        char_vectors (torch.Tensor): Pre-trained char vectors.
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
@@ -121,6 +122,7 @@ class BiDAFWithChar(nn.Module):
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
         # to do : determine what do about the masking for the character embedding
+        # answer: nothing needs to be done here
 
         c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, hidden_size)
         q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, hidden_size)

@@ -21,7 +21,7 @@ import util
 from args import get_test_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF
+from models import BiDAF, BiDAFWithChar
 from os.path import join
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -44,9 +44,16 @@ def main(args):
 
     # Get model
     log.info('Building model...')
-    model = BiDAF(word_vectors=word_vectors, ## to do: here BidafChar should be initialized in case of char embedding
-                  char_vectors=char_vectors,
-                  hidden_size=args.hidden_size)
+    if args.name == "CharEmbedding":
+        log.info('Performing testing using Character Embedding')
+        model = BiDAFWithChar(word_vectors=word_vectors,
+                char_vectors = char_vectors,
+                hidden_size=args.hidden_size)
+    else:
+        log.info('Performing testing without using Character Embedding')
+        model = BiDAF(word_vectors=word_vectors,
+                char_vectors = char_vectors,
+                hidden_size=args.hidden_size)
     model = nn.DataParallel(model, gpu_ids)
     log.info(f'Loading checkpoint from {args.load_path}...')
     model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
