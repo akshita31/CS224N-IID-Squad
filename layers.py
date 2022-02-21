@@ -237,41 +237,4 @@ class BiDAFOutput(nn.Module):
 
         return log_p1, log_p2
 
-class CharEmbedding(nn.Module):
-    """Character Embedding layer used by BiDAF.
 
-    It takes in an input vector word (or its index) and using the characters in the word, 
-    transforms it to an embedding of a fixed size.
-
-    Args:
-        char_vector: Pretrained character vectors. (maybe one-hot. need to verify this)
-        hidden_size (int): Size of hidden activations.
-        drop_prob (float): Probability of zero-ing out activations
-    """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
-        super(Embedding, self).__init__()
-        self.drop_prob = drop_prob
-        self.word_embed = nn.Embedding.from_pretrained(word_vectors)
-
-        self.char_embed = None 
-        # 1. define the char_embed layer/function here using the CNN
-        # 2. Change the input size of the projection layer to be char_embed_size + word_embed_size. 
-        # Projection layer will project it to the hidden_size, after that the whole algo should most likely remain the same.  
-        
-        self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
-        # Projection layer has size (embed_size, hidden_size)
-        self.hwy = HighwayEncoder(2, hidden_size)
-
-    def forward(self, word_idxs, char_idxs):
-        word_embedding = self.word_embed(word_idxs)   # (batch_size, seq_len, embed_size)
-        char_embedding = self.char_embed(char_idxs)
-        
-        # 1. Figure out how to concatenate the word and char embedding, maybe something like (need to take care of the dimensions here)
-        # emb = torch.cat(word_embedding, char_embedding)
-        # 2. After the concat, they will be passed to the proj and highway layers so no further change should be needed here
-
-        emb = F.dropout(emb, self.drop_prob, self.training)
-        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
-        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
-
-        return emb
