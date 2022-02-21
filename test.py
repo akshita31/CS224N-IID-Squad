@@ -44,6 +44,8 @@ def main(args):
 
     # Get model
     log.info('Building model...')
+
+    ## During testing dropout should always be 0
     if args.name == "CharEmbedding":
         log.info('Performing testing using Character Embedding')
         model = BiDAFWithChar(word_vectors=word_vectors,
@@ -54,6 +56,7 @@ def main(args):
         model = BiDAF(word_vectors=word_vectors,
                 char_vectors = char_vectors,
                 hidden_size=args.hidden_size)
+
     model = nn.DataParallel(model, gpu_ids)
     log.info(f'Loading checkpoint from {args.load_path}...')
     model = util.load_model(model, args.load_path, gpu_ids, return_step=False)

@@ -54,14 +54,16 @@ class WordPlusCharEmbedding(nn.Module):
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
         super(WordPlusCharEmbedding, self).__init__()
         self.drop_prob = drop_prob
-        self.char_embed_size = 50
+        self.char_embed_size = hidden_size/2
         self.word_embed_size = word_vectors.size(1)
         self.hidden_size = hidden_size
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
         self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, char_embed_size = self.char_embed_size)
         
-        self.proj = nn.Linear(self.word_embed_size + self.char_embed_size, hidden_size, bias=False)
+        self.word_proj = nn.Linear(self.word_embed_size, hidden_size/2, bias=False)
+
+        # self.proj = nn.Linear(self.word_embed_size + self.char_embed_size, hidden_size, bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
 
     def forward(self, word_idxs, char_idxs):
@@ -70,14 +72,14 @@ class WordPlusCharEmbedding(nn.Module):
         
         (batch_size, seq_len, _) = word_emb.shape()
         assert(char_emb.shape == (batch_size, seq_len, self.char_embed_size))
+        
+        word_projection = self.word_proj(word_emb)
+        
+        #concatenate to produce the final embedding
+        emb = torch.cat(word_projection, char_emb, dim = 2)
+        assert(emb.shape == (batch_size, seq_len, self.hidden_size))
 
-        emb = torch.cat(word_emb, char_emb, dim = 2)
-        assert(emb.shape == (batch_size, seq_len, self.word_embed_size + self.char_embed_size))
-
-        # to do: Check whether the dropout mentioned is needed ?
-        # to do: how has the char and word embedding fed into the highway network ??
         emb = F.dropout(emb, self.drop_prob, self.training)
-        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
 
         assert(emb.shape == (batch_size, seq_len, self.hidden_size))
