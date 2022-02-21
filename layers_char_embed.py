@@ -5,7 +5,7 @@ import torch.nn.Functional as F
 from layers import HighwayEncoder
 
 
-class CharEmbedding(nn.Module):
+class _CharEmbedding(nn.Module):
     """Character Embedding layer used by BiDAF.
 
     It takes in an input word (or its index) and using the characters in the word, 
@@ -19,7 +19,7 @@ class CharEmbedding(nn.Module):
     """
     
     def __init__(self, char_vectors, drop_prob, char_embed_size) -> None:
-        super(CharEmbedding, self).__init__()
+        super(_CharEmbedding, self).__init__()
         self.output_embed_size = char_embed_size # whatever dimension we will use for the word vector, same we will use for the char vectors (output of the Char Embed layer) 
 
         self.char_embed = nn.Embedding.from_pretrained(char_vectors)
@@ -50,7 +50,7 @@ class WordPlusCharEmdedding(nn.Module):
         self.hidden_size = hidden_size
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
-        self.char_embed = CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, char_embed_size = self.char_embed_size)
+        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, char_embed_size = self.char_embed_size)
         
         self.proj = nn.Linear(self.word_embed_size + self.char_embed_size, hidden_size, bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
