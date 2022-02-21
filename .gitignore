@@ -2,3 +2,6 @@
 .idea/
 __pycache__
 .texpadtmp/
+data/
+*.tfevents.*
+*.tar
