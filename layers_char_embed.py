@@ -23,17 +23,25 @@ class _CharEmbedding(nn.Module):
         super(_CharEmbedding, self).__init__()
         self.output_embed_size = char_embed_size # whatever dimension we will use for the word vector, same we will use for the char vectors (output of the Char Embed layer) 
 
-        self.char_embed = nn.Embedding.from_pretrained(char_vectors)
+        self.chars_per_word = 16 # this is from the char_idx array
+        self.char_embed = nn.Embedding.from_pretrained(char_vectors) #output will be (batch_size, seq_length, chars_per_word, input_embedding_len)
 
-        self.cnn = nn.Sequential(nn.Conv1d(in_channels = char_vectors.size(1), out_channels =  self.output_embed_size, kernel_size = 3),# check dimensions passed here
-                                nn.AdaptiveMaxPool1d(self.output_embed_size))
+        self.cnn = nn.Sequential(nn.Conv1d(in_channels = self.chars_per_word, out_channels =  self.output_embed_size, kernel_size = 3),# check dimensions passed here
+                                nn.Dropout(p = drop_prob),
+                                nn.AdaptiveMaxPool1d(1)) # output will be (batch_size*seq_length, char_embed_size (or num_filters), 1)
 
     def forward(self, char_idxs):
-        (batch_size, seq_len, _) = char_idxs.shape()
-        
         emb = self.char_embed(char_idxs)
+        (batch_size, seq_len, num_chars_per_word, input_chars_dim) = emb.shape
+
+        emb = emb.reshape(batch_size * seq_len, num_chars_per_word, -1)
         emb = self.cnn(emb)
         
+        assert(emb.shape == (batch_size*seq_len, self.output_embed_size, 1))
+
+        emb = torch.squeeze(emb, dim=2)
+        emb = emb.reshape(batch_size, seq_len, self.output_embed_size)
+
         assert(emb.shape == (batch_size, seq_len, self.output_embed_size))
 
         return emb
