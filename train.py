@@ -49,7 +49,7 @@ def main(args):
     # Get model
     log.info('Building model...')
 
-    if args.name == "CharEmbedding":
+    if "CharEmbedding" in args.name:
         log.info('Performing training using Character Embedding')
         model = BiDAFWithChar(word_vectors=word_vectors,
                 char_vectors = char_vectors,
