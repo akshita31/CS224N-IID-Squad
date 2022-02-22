@@ -46,7 +46,7 @@ def main(args):
     log.info('Building model...')
 
     ## During testing dropout should always be 0
-    if args.name == "CharEmbedding":
+    if "CharEmbedding" in args.name:
         log.info('Performing testing using Character Embedding')
         model = BiDAFWithChar(word_vectors=word_vectors,
                 char_vectors = char_vectors,
