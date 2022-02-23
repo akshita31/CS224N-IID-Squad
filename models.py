@@ -98,8 +98,7 @@ class BiDAFWithChar(nn.Module):
         self.emb = layers_char_embed.WordPlusCharEmbedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
                                     hidden_size=hidden_size,
-                                    drop_prob=drop_prob,
-                                    device=device)
+                                    drop_prob=drop_prob)
 
         self.enc = layers.RNNEncoder(input_size=hidden_size,
                                      hidden_size=hidden_size,

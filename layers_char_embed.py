@@ -16,61 +16,40 @@ class _CharEmbedding(nn.Module):
         char_vector: Pretrained character vectors. (maybe one-hot. need to verify this)
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations
-        char_embed_size: dimension of the output embeddings for each word.
+        num_filters: dimension of the output embeddings for each word.
     """
     
-    def __init__(self, char_vectors, drop_prob, char_embed_size, device) -> None:
+    def __init__(self, char_vectors, drop_prob, num_filters) -> None:
         super(_CharEmbedding, self).__init__()
         
         self.input_char_emb_size = char_vectors.size(1)
-        self.output_embed_size = char_embed_size # whatever dimension we will use for the word vector, same we will use for the char vectors (output of the Char Embed layer) 
-        self.device = device
+        self.num_filters = num_filters
         self.char_embed = nn.Embedding.from_pretrained(char_vectors) #output will be (batch_size, seq_length, chars_per_word, input_embedding_len)
         self.drop_prob = drop_prob
 
-        #print('Chars per word is', self.chars_per_word)
-        #print('Out channel is', self.output_embed_size)
-        self.cnn = nn.Sequential(nn.Conv1d(in_channels = self.input_char_emb_size, out_channels =  self.output_embed_size, kernel_size = 3),# check dimensions passed here
+        self.cnn = nn.Sequential(nn.Conv1d(in_channels = self.input_char_emb_size, out_channels =  self.num_filters, kernel_size = 3),# check dimensions passed here
                                 nn.ReLU(),
-                                nn.BatchNorm1d(self.output_embed_size),
+                                nn.BatchNorm1d(num_features = self.num_filters),
                                 # nn.Dropout(p = drop_prob),
-                                nn.AdaptiveMaxPool1d(1)) # output will be (batch_size*seq_length, output_embed_size (or num_filters), 1)
-        # self.conv2 = nn.Sequential(nn.Conv1d(in_channels = self.input_char_emb_size, out_channels =  self.output_embed_size // 2, kernel_size = 5),# check dimensions passed here
-        #                         nn.ReLU(),
-        #                         nn.BatchNorm1d(self.output_embed_size // 2),
-        #                         # nn.Dropout(p = drop_prob),
-        #                         nn.AdaptiveMaxPool1d(1))
+                                nn.AdaptiveMaxPool1d(1)) # output will be (batch_size*seq_length, num_filters, 1)
 
     def forward(self, char_idxs):
+
+        (batch_size, seq_len, _) = char_idxs.shape
+        char_idxs = char_idxs.reshape(batch_size*seq_len, -1)
+        
         emb = self.char_embed(char_idxs)
-        (batch_size, seq_len, num_chars_per_word, input_chars_dim) = emb.shape
         emb = F.dropout(emb, self.drop_prob, self.training)
 
-        emb = torch.transpose(emb, 2, 3)
-        emb = emb.reshape(batch_size * seq_len, input_chars_dim, -1)
+        emb = torch.transpose(emb, 1, 2)
         emb = self.cnn(emb)
 
-        assert(emb.shape == (batch_size*seq_len, self.output_embed_size, 1))
+        assert(emb.shape == (batch_size*seq_len, self.num_filters, 1))
         emb = torch.squeeze(emb, dim=2)
-        emb = emb.reshape(batch_size, seq_len, self.output_embed_size)
+        emb = emb.reshape(batch_size, seq_len, self.num_filters)
 
-        # emb = emb.reshape(batch_size * seq_len, input_chars_dim, -1)
-        # assert(emb.shape == (batch_size*seq_len, input_chars_dim, num_chars_per_word))
-        
-        # emb1 = self.conv1(emb)
-        # emb1 = torch.squeeze(emb1, dim=2)
-        # emb1 = emb1.reshape(batch_size, seq_len, self.output_embed_size // 2)
 
-        # emb2 = self.conv2(emb)
-        # emb2 = torch.squeeze(emb2, dim=2)
-        # emb2 = emb2.reshape(batch_size, seq_len, self.output_embed_size // 2)
-        
-        # emb = torch.cat((emb1, emb2), dim = 2)
-        
-
-        # emb = torch.squeeze(emb, dim=2)
-
-        assert(emb.shape == (batch_size, seq_len, self.output_embed_size))
+        assert(emb.shape == (batch_size, seq_len, self.num_filters))
 
         return emb
 
@@ -79,27 +58,25 @@ class WordPlusCharEmbedding(nn.Module):
     Output of this layer will be (batch_size, seq_len, hidden_size)
     """
 
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, device):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
         super(WordPlusCharEmbedding, self).__init__()
         self.drop_prob = drop_prob
-        self.char_embed_size = 200
+        self.num_filters = 200
         self.word_embed_size = word_vectors.size(1)
         self.hidden_size = hidden_size
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
-        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, char_embed_size = self.char_embed_size, device = device)
-        
-        #self.word_proj = nn.Linear(self.word_embed_size, (int)(hidden_size/2), bias=False)
+        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = self.num_filters)
 
-        self.proj = nn.Linear(self.word_embed_size + self.char_embed_size, hidden_size, bias=False)
+        self.proj = nn.Linear(self.word_embed_size + self.num_filters, hidden_size, bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
 
     def forward(self, word_idxs, char_idxs):
         word_emb = self.word_embed(word_idxs)
         char_emb = self.char_embed(char_idxs)
-        # to do: add droput after this layer
+
         (batch_size, seq_len, _) = word_emb.shape
-        assert(char_emb.shape == (batch_size, seq_len, self.char_embed_size))
+        assert(char_emb.shape == (batch_size, seq_len, self.num_filters))
         
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
         #word_projection = self.word_proj(word_emb)
