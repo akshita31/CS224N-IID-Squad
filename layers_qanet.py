@@ -1,31 +1,44 @@
 import torch
 import torch.nn as nn
-import math
+import torch.nn.functional as f
 
-class PositionalEncoder(nn.Module):
-    def __init__(self, d_model, max_seq_len = 80):
-        super().__init__()
-        self.d_model = d_model
-        
-        # create constant 'pe' matrix with values dependant on 
-        # pos and i
-        pe = torch.zeros(max_seq_len, d_model)
-        for pos in range(max_seq_len):
-            for i in range(0, d_model, 2):
-                pe[pos, i] = \
-                math.sin(pos / (10000 ** ((2 * i)/d_model)))
-                pe[pos, i + 1] = \
-                math.cos(pos / (10000 ** ((2 * (i + 1))/d_model)))
-                
-        pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
- 
+from util import masked_softmax
+
+class QANetOutput(nn.Module):
+    """Output layer used by QANet for question answering.
+
+    As mentioned in the paper, output size of the encoding layers is (hidden_size = 128)
+    They are basically the query informed context words representations
     
-    def forward(self, x):
-        # make embeddings relatively larger
-        x = x * math.sqrt(self.d_model)
-        #add constant to embedding
-        seq_len = x.size(1)
-        x = x + Variable(self.pe[:,:seq_len], \
-        requires_grad=False).cuda()
-        return x
+    Args:
+        hidden_size (int): Hidden size used in the BiDAF model.
+        drop_prob (float): Probability of zero-ing out activations.
+    """
+    def __init__(self, hidden_size, drop_prob):
+        super(QANetOutput, self).__init__()
+        self.start_linear = nn.Linear(2*hidden_size, 1, bias = False)
+        self.end_linear = nn.Linear(2*hidden_size,1 , bias = False)
+
+    def forward(self, m0, m1, m2, mask):
+        
+        (batch_size, seq_len, hidden_size) = m0.shape
+
+        # (batch_size, seq_len, hidden_size)
+        start_enc = torch.cat((m0, m1), dim =2)
+        end_enc = torch.cat((m0, m2), dim = 2)
+
+        assert(start_enc.shape == (batch_size, seq_len, 2*hidden_size))
+        assert(end_enc.shape == (batch_size, seq_len, 2*hidden_size))
+
+        # Shapes: (batch_size, seq_len, 1)
+        logits_1 = self.start_linear(start_enc)
+        logits_2 = self.end_linear(end_enc)
+
+        assert(logits_1.shape == (batch_size, seq_len, 1))
+        assert(logits_2.shape == (batch_size, seq_len, 1))
+
+        # Shapes: (batch_size, seq_len)
+        log_p1 = masked_softmax(logits_1.squeeze(dim=2), mask, log_softmax=True)
+        log_p2 = masked_softmax(logits_2.squeeze(dim=2), mask, log_softmax=True)
+
+        return log_p1, log_p2
