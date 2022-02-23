@@ -35,14 +35,13 @@ class _CharEmbedding(nn.Module):
 
     def forward(self, char_idxs):
 
-        (batch_size, seq_len, num_chars_per_word) = char_idxs.shape
+        (batch_size, seq_len, _) = char_idxs.shape
         char_idxs = char_idxs.reshape(batch_size*seq_len, -1)
         
         emb = self.char_embed(char_idxs)
         emb = F.dropout(emb, self.drop_prob, self.training)
 
         emb = torch.transpose(emb, 1, 2)
-        # emb = emb.reshape(batch_size * seq_len, -1)
         emb = self.cnn(emb)
 
         assert(emb.shape == (batch_size*seq_len, self.num_filters, 1))
