@@ -31,7 +31,7 @@ class _CharEmbedding(nn.Module):
                                 nn.ReLU(),
                                 nn.BatchNorm1d(num_features = self.num_filters),
                                 # nn.Dropout(p = drop_prob),
-                                nn.AdaptiveMaxPool1d(1)) # output will be (batch_size*seq_length, num_filters (or num_filters), 1)
+                                nn.AdaptiveMaxPool1d(1)) # output will be (batch_size*seq_length, num_filters, 1)
 
     def forward(self, char_idxs):
 
