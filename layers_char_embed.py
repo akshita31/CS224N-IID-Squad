@@ -53,15 +53,15 @@ class _CharEmbedding(nn.Module):
 
         return emb
 
-class WordPlusCharEmbedding(nn.Module):
+class BiDAFWordPlusCharEmbedding(nn.Module):
     """Combines the Word and Character embedding and then applies a transformation and highway network.
     Output of this layer will be (batch_size, seq_len, hidden_size)
     """
 
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
-        super(WordPlusCharEmbedding, self).__init__()
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, num_filters):
+        super(BiDAFWordPlusCharEmbedding, self).__init__()
         self.drop_prob = drop_prob
-        self.num_filters = 200
+        self.num_filters = num_filters
         self.word_embed_size = word_vectors.size(1)
         self.hidden_size = hidden_size
 

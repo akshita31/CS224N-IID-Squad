@@ -6,6 +6,7 @@ Author:
 
 import layers
 import layers_char_embed
+import layers_qanet
 import torch
 import torch.nn as nn
 
@@ -93,12 +94,15 @@ class BiDAFWithChar(nn.Module):
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, device, drop_prob=0.):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
         super(BiDAFWithChar, self).__init__()
-        self.emb = layers_char_embed.WordPlusCharEmbedding(word_vectors=word_vectors,
+
+        self.char_embed_size = 100
+        self.emb = layers_char_embed.BiDAFWordPlusCharEmbedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
                                     hidden_size=hidden_size,
-                                    drop_prob=drop_prob)
+                                    drop_prob=drop_prob,
+                                    num_filters=self.char_embed_size)
 
         self.enc = layers.RNNEncoder(input_size=hidden_size,
                                      hidden_size=hidden_size,
@@ -136,5 +140,97 @@ class BiDAFWithChar(nn.Module):
         mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
 
         out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+
+        return out
+
+class QANet(nn.Module):
+    """Baseline BiDAF model for SQuAD.
+
+    Based on the paper:
+    "Bidirectional Attention Flow for Machine Comprehension"
+    by Minjoon Seo, Aniruddha Kembhavi, Ali Farhadi, Hannaneh Hajishirzi
+    (https://arxiv.org/abs/1611.01603).
+
+    Follows a high-level structure commonly found in SQuAD models:
+        - Embedding layer: Embed word indices to get word vectors.
+        - Encoder layer: Encode the embedded sequence.
+        - Attention layer: Apply an attention mechanism to the encoded sequence.
+        - Model encoder layer: Encode the sequence again.
+        - Output layer: Simple layer (e.g., fc + softmax) to get final outputs.
+
+    Args:
+        word_vectors (torch.Tensor): Pre-trained word vectors.
+        char_vectors (torch.Tensor): Pre-trained char vectors.
+        hidden_size (int): Number of features in the hidden state at each layer.
+        drop_prob (float): Dropout probability.
+    """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
+        super(QANet, self).__init__()
+        
+        self.char_embed_size = 200
+        self.word_embed_size = word_vectors.size(1)
+        self.hidden_size = hidden_size
+
+        self.emb = layers_qanet.QANetEmbedding(word_vectors=word_vectors,
+                                    char_vectors=char_vectors,
+                                    hidden_size=hidden_size,
+                                    drop_prob=drop_prob,
+                                    num_filters=self.char_embed_size)
+
+        self.embedding_encoder_context =  None
+        self.embedding_encoder_question = None
+        # self.enc = layers.RNNEncoder(input_size=hidden_size,
+        #                              hidden_size=hidden_size,
+        #                              num_layers=1,
+        #                              drop_prob=drop_prob)
+
+        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
+                                         drop_prob=drop_prob)
+
+        # self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
+        #                              hidden_size=hidden_size,
+        #                              num_layers=2,
+        #                              drop_prob=drop_prob)
+
+        self.encoder_block0 = None
+        self.encoder_block1 = None
+        self.encoder_block2 = None
+
+        self.out = layers_qanet.QANetOutput(hidden_size=hidden_size,
+                                      drop_prob=drop_prob)
+
+    def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
+        c_mask = torch.zeros_like(cw_idxs) != cw_idxs
+        q_mask = torch.zeros_like(qw_idxs) != qw_idxs
+        c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
+        batch_size = cw_idxs.shape(0)
+
+        # In QANet the projection is not applied and output of highway network is same size as the word+char embedding dim
+        c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, hidden_size)
+        q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, hidden_size)
+
+        assert(c_emb.shape == (batch_size, c_len, self.word_embed_size + self.char_embed_size))
+        assert(q_emb.shape == (batch_size, q_len, self.word_embed_size + self.char_embed_size))
+
+        # Input of this encoder layer is (word_embed_size + char_embed_size and output is the hidden_size)
+        c_enc = self.embedding_encoder_context(c_emb)
+        q_enc = self.embedding_encoder_question(q_emb)
+        # c_enc = self.enc(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)
+        # q_enc = self.enc(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
+
+        assert(c_enc.shape == (batch_size, c_len, self.hidden_size))
+        assert(q_enc.shape == (batch_size, q_len, self.hidden_size))
+
+        # compute attention same as BiDAF
+        att = self.att(c_enc, q_enc,
+                       c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
+
+        assert(att.shape == (batch_size, c_len, 8 * self.hidden_size))
+
+        m0 = self.encoder_block0(att)
+        m1 = self.encoder_block1(m0)
+        m2 = self.encoder_block2(m1)
+
+        out = self.out(m0, m1, m2, c_mask)
 
         return out
