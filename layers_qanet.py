@@ -141,10 +141,23 @@ class DepthwiseSeparableConv(nn.Module):
         return out
 
 class PositionalEncoder(nn.Module):
+    #Reference: https://github.com/tatp22/multidim-positional-encoding/blob/master/positional_encodings/positional_encodings.py
     def __init__(self, in_channels):
         super.(PositionalEncoding, self).__init__()
-        #TODO: probably just initializations here
+
+        if in_channels%2 == 0:
+            self.channels = in_channels
+        else:
+            self.channels = in_channels + 1
+
+        self.frequency_factor = 1.0 / (10000 ** (torch.arange(0, self.channels, 2).float() / self.channels))
 
     def forward(self, x):
-        #TODO: apply sin and cos based on position
-        pass
+        pos_x = torch.arange(x)
+        frequency_x = torch.einsum("i,j->ij", pos_x, self.frequency_factor)
+        emb_x = torch.cat((frequency_x.sin(), frequency_x.cos()), dim=-1)
+
+        emb = torch.zeros((x, self.channels))
+        emb[:, : self.channels] = emb_x
+        
+        return emb[None, :, :x.shape]
