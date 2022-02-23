@@ -56,13 +56,14 @@ def main(args):
                 hidden_size=args.hidden_size,
                 drop_prob=args.drop_prob,
                 device = device)
+        log.info(model)
     else:
         log.info('Performing training without using Character Embedding')
         model = BiDAF(word_vectors=word_vectors,
                 char_vectors = char_vectors,
                 hidden_size=args.hidden_size,
                 drop_prob=args.drop_prob)
-                  
+        log.info(model)          
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
