@@ -42,3 +42,66 @@ class QANetOutput(nn.Module):
         log_p2 = masked_softmax(logits_2.squeeze(dim=2), mask, log_softmax=True)
 
         return log_p1, log_p2
+
+class Encoder(nn.Module):
+    def __init__(self):
+        super(Encoder, self).__init__()
+        #depthwise separable conv
+        #self attention
+        #FFN
+
+    def forward(self):
+        pass
+
+class SelfAttention(nn.Module):
+    def __init__(self, n_head=8, n_embed):
+        super(SelfAttention, self).__init__()
+        self.n_head = n_head
+        self.n_embed = n_embed
+        assert self.n_embd % self.n_head == 0
+        # key, query, value projections for all heads
+        self.key = nn.Linear(self.n_embed, self.n_embed)
+        self.query = nn.Linear(self.n_embed, self.n_embed)
+        self.value = nn.Linear(self.n_embed, self.n_embed)
+        # regularization
+        self.attn_drop = nn.Dropout(config.attn_pdrop)
+        self.resid_drop = nn.Dropout(config.resid_pdrop)
+        # output projection
+        self.proj = nn.Linear(self.n_embed, self.n_embed)
+        # causal mask to ensure that attention is only applied to the left in the input sequence
+        self.register_buffer("mask", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
+        self.n_head = config.n_head
+
+    def forward(self, x, layer_past=None):
+        B, T, C = x.size()
+
+        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        k = self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        q = self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        v = self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+
+        # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        att = att.masked_fill(self.mask[:,:,:T,:T] == 0, -1e10) # todo: just use float('-inf') instead?
+        att = F.softmax(att, dim=-1)
+        att = self.attn_drop(att)
+        y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+
+        # output projection
+        y = self.resid_drop(self.proj(y))
+        return y
+
+class DepthwiseSeparableConv(nn.Module):
+    def __init__(self):
+        super(DepthwiseSeparableConv, self).__init__()
+
+    def forward(self):
+        pass
+
+class FFN(nn.Module):
+    def __init__(self):
+        super(FFN, self).__init__()
+
+    def forward(self):
+        pass  
