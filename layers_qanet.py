@@ -46,9 +46,11 @@ class QANetOutput(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, input_size=500, num_filters=128, kernel_size=7, num_conv_layers=4, num_heads=8, drop_prob=0.1):
         super(Encoder, self).__init__()
+
+        self.positional_encoder = PositionalEncoder(input_size)
         
         #depthwise separable conv
-        self.convs = nn.ModuleList([])
+        self.conv_layers = nn.ModuleList([])
         self.conv_layer_norms = nn.ModuleList([])
         for i in range(num_conv_layers):
             if i==0:
@@ -56,7 +58,7 @@ class Encoder(nn.Module):
             else:
                 self.conv_layer_norms.append(nn.LayerNorm(num_filters))
 
-            self.convs.append(DepthwiseSeparableConv(input_size, num_filters, kernel_size))
+            self.conv_layers.append(DepthwiseSeparableConv(input_size, num_filters, kernel_size))
 
         #self attention
         self.att_layer_norm = nn.LayerNorm(num_filters)
@@ -64,7 +66,7 @@ class Encoder(nn.Module):
 
         #feed-forward-layers
         self.ffn_layer_norm = nn.LayerNorm(num_filters)
-        
+
         self.ffn_1 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
         nn.init.xavier_uniform_(self.ffn_1)
 
@@ -72,8 +74,21 @@ class Encoder(nn.Module):
         nn.init.xavier_uniform_(self.ffn_2)
 
 
-    def forward(self):
-        pass
+    def forward(self, x):
+        #TODO: implement residual block
+        out = self.positional_encoder.forward(x)
+        for i, conv_layer in enumerate(self.conv_layers):
+            out = self.conv_layer_norms[i](out)
+            out = conv_layer(out)
+
+        out = self.att_layer_norm(out)
+        out = self.att(out)
+        
+        out = self.ffn_layer_norm(out)
+        out = self.ffn_1(out)
+        out = self.ffn_2(out)
+
+        return out
 
 class SelfAttention(nn.Module):
     def __init__(self, n_embed=128, n_head=8):
@@ -125,11 +140,11 @@ class DepthwiseSeparableConv(nn.Module):
         out = self.pointwiseConv(out)
         return out
 
-# class FFN(nn.Module):
-#     def __init__(self, in_channels, out_channels, kernel_size):
-#         super(FFN, self).__init__()
-#         self.conv1d = nn.Conv1d(in_channels, out_channels, kernel_size)
-#         nn.init.xavier_uniform_(self.)
+class PositionalEncoder(nn.Module):
+    def __init__(self, in_channels):
+        super.(PositionalEncoding, self).__init__()
+        #TODO: probably just initializations here
 
-#     def forward(self, x):
-#         return self.conv1d(x)  
+    def forward(self, x):
+        #TODO: apply sin and cos based on position
+        pass
