@@ -42,3 +42,5 @@ class QANetOutput(nn.Module):
         log_p2 = masked_softmax(logits_2.squeeze(dim=2), mask, log_softmax=True)
 
         return log_p1, log_p2
+
+    #test
