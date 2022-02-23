@@ -1,0 +1,2 @@
+1. QANet student paper reference - https://web.stanford.edu/class/archive/cs/cs224n/cs224n.1214/reports/final_reports/report269.pdf
+2. QANet Pytorch Implementation - https://github.com/BangLiu/QANet-PyTorch/tree/master/model
