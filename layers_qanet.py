@@ -44,22 +44,39 @@ class QANetOutput(nn.Module):
         return log_p1, log_p2
 
 class Encoder(nn.Module):
-    def __init__(self, input_size):
+    def __init__(self, input_size=500, num_filters=128, kernel_size=7, num_conv_layers=4, num_heads=8, drop_prob=0.1):
         super(Encoder, self).__init__()
+        
         #depthwise separable conv
-        #self attention
-        self.FFN1 = nn.Conv1d(input_size, input_size, 1)
-        nn.init.xavier_uniform_(self.FFN1)
+        self.convs = nn.ModuleList([])
+        self.conv_layer_norms = nn.ModuleList([])
+        for i in range(num_conv_layers):
+            if i==0:
+                self.conv_layer_norms.append(nn.LayerNorm(input_size))
+            else:
+                self.conv_layer_norms.append(nn.LayerNorm(num_filters))
 
-        self.FFN2 = nn.Conv1d(input_size, input_size, 1)
-        nn.init.xavier_uniform_(self.FFN2)
+            self.convs.append(DepthwiseSeparableConv(input_size, num_filters, kernel_size))
+
+        #self attention
+        self.att_layer_norm = nn.LayerNorm(num_filters)
+        self.att = SelfAttention(num_filters, num_heads)
+
+        #feed-forward-layers
+        self.ffn_layer_norm = nn.LayerNorm(num_filters)
+        
+        self.ffn_1 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
+        nn.init.xavier_uniform_(self.ffn_1)
+
+        self.ffn_2 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
+        nn.init.xavier_uniform_(self.ffn_2)
 
 
     def forward(self):
         pass
 
 class SelfAttention(nn.Module):
-    def __init__(self, n_head=8, n_embed):
+    def __init__(self, n_embed=128, n_head=8):
         super(SelfAttention, self).__init__()
         self.n_head = n_head
         self.n_embed = n_embed
