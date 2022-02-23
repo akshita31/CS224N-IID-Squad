@@ -12,11 +12,3 @@ class QANetConfig:
         self.block_size = block_size
         for k,v in kwargs.items():
             setattr(self, k, v)
-
-
-class QANet(nn.Module):
-	def __init__(self):
-		super(QANet, self).__init__()
-
-	def forward(self):
-		pass

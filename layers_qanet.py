@@ -44,11 +44,16 @@ class QANetOutput(nn.Module):
         return log_p1, log_p2
 
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, input_size):
         super(Encoder, self).__init__()
         #depthwise separable conv
         #self attention
-        #FFN
+        self.FFN1 = nn.Conv1d(input_size, input_size, 1)
+        nn.init.xavier_uniform_(self.FFN1)
+
+        self.FFN2 = nn.Conv1d(input_size, input_size, 1)
+        nn.init.xavier_uniform_(self.FFN2)
+
 
     def forward(self):
         pass
@@ -93,15 +98,21 @@ class SelfAttention(nn.Module):
         return y
 
 class DepthwiseSeparableConv(nn.Module):
-    def __init__(self):
+    def __init__(self, in_channels, out_channels, kernel_size):
         super(DepthwiseSeparableConv, self).__init__()
+        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size, groups=in_channels)
+        self.pointwiseConv = nn.Conv1d(in_channels, out_channels, kernel_size=1)
 
-    def forward(self):
-        pass
+    def forward(self, x):
+        out = self.depthwiseConv(x)
+        out = self.pointwiseConv(out)
+        return out
 
-class FFN(nn.Module):
-    def __init__(self):
-        super(FFN, self).__init__()
+# class FFN(nn.Module):
+#     def __init__(self, in_channels, out_channels, kernel_size):
+#         super(FFN, self).__init__()
+#         self.conv1d = nn.Conv1d(in_channels, out_channels, kernel_size)
+#         nn.init.xavier_uniform_(self.)
 
-    def forward(self):
-        pass  
+#     def forward(self, x):
+#         return self.conv1d(x)  
