@@ -86,7 +86,8 @@ def main(args):
     lr_step = 15000 # change the learning rate after every 1 million steps (15000*64)
     optimizer = optim.Adadelta(model.parameters(), args.lr,
                                weight_decay=args.l2_wd)
-    lambda1 = lambda epoch: args.lr ** (epoch//lr_step)
+    lambda1 = lambda epoch: args.lr ** (epoch//lr_step) # decreasing learning rate
+    lambda2 = lambda epoch: args.lr # constant learning rate
     scheduler = sched.LambdaLR(optimizer, lambda1)  # Constant LR
 
     # Get data loader
