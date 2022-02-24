@@ -54,8 +54,7 @@ def main(args):
         model = BiDAFWithChar(word_vectors=word_vectors,
                 char_vectors = char_vectors,
                 hidden_size=args.hidden_size,
-                drop_prob=args.drop_prob,
-                device = device)
+                drop_prob=args.drop_prob)
         log.info(model)
     else:
         log.info('Performing training without using Character Embedding')
@@ -86,7 +85,8 @@ def main(args):
     lr_step = 15000 # change the learning rate after every 1 million steps (15000*64)
     optimizer = optim.Adadelta(model.parameters(), args.lr,
                                weight_decay=args.l2_wd)
-    lambda1 = lambda epoch: args.lr ** (epoch//lr_step)
+    lambda1 = lambda epoch: args.lr ** (epoch//lr_step) # decreasing learning rate
+    lambda2 = lambda epoch: args.lr # constant learning rate
     scheduler = sched.LambdaLR(optimizer, lambda1)  # Constant LR
 
     # Get data loader
