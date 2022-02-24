@@ -209,7 +209,7 @@ class QANet(nn.Module):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
-        batch_size = cw_idxs.shape(0)
+        batch_size = cw_idxs.shape[0]
 
         # In QANet the projection is not applied and output of highway network is same size as the word+char embedding dim
         c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, hidden_size)

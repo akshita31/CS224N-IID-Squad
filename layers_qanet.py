@@ -186,6 +186,11 @@ class QANetEmbedding(nn.Module):
         char_emb = self.char_embed(char_idxs)
 
         (batch_size, seq_len, _) = word_emb.shape
+        print(word_emb.shape)
+        print(batch_size)
+        print(seq_len)
+        print(self.num_filters)
+        print(char_emb.shape)
         assert(char_emb.shape == (batch_size, seq_len, self.num_filters))
         
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
