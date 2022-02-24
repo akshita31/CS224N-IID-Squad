@@ -81,9 +81,13 @@ def main(args):
                                  log=log)
 
     # Get optimizer and scheduler
+
+    lr_step = 15000 # change the learning rate after every 1 million steps (15000*64)
     optimizer = optim.Adadelta(model.parameters(), args.lr,
                                weight_decay=args.l2_wd)
-    scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
+    lambda1 = lambda epoch: args.lr ** (epoch//lr_step) # decreasing learning rate
+    lambda2 = lambda epoch: args.lr # constant learning rate
+    scheduler = sched.LambdaLR(optimizer, lambda1)  # Constant LR
 
     # Get data loader
     log.info('Building dataset...')
@@ -142,6 +146,9 @@ def main(args):
                 tbx.add_scalar('train/LR',
                                optimizer.param_groups[0]['lr'],
                                step)
+                
+                # lr = optimizer.param_groups[0]['lr']
+                #log.info(f'Learning rate is: {lr}; Step is: {step}' )
 
                 steps_till_eval -= batch_size
                 if steps_till_eval <= 0:

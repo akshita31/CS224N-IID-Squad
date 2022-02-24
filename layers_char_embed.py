@@ -27,7 +27,13 @@ class _CharEmbedding(nn.Module):
         self.char_embed = nn.Embedding.from_pretrained(char_vectors) #output will be (batch_size, seq_length, chars_per_word, input_embedding_len)
         self.drop_prob = drop_prob
 
-        self.cnn = nn.Sequential(nn.Conv1d(in_channels = self.input_char_emb_size, out_channels =  self.num_filters, kernel_size = 3),# check dimensions passed here
+        self.conv1 = nn.Sequential(nn.Conv1d(in_channels = self.input_char_emb_size, out_channels =  self.num_filters, kernel_size = 3),# check dimensions passed here
+                                nn.ReLU(),
+                                nn.BatchNorm1d(num_features = self.num_filters),
+                                # nn.Dropout(p = drop_prob),
+                                nn.AdaptiveMaxPool1d(1)) # output will be (batch_size*seq_length, num_filters, 1)
+        
+        self.conv2 = nn.Sequential(nn.Conv1d(in_channels = self.input_char_emb_size, out_channels =  self.num_filters, kernel_size = 5),# check dimensions passed here
                                 nn.ReLU(),
                                 nn.BatchNorm1d(num_features = self.num_filters),
                                 # nn.Dropout(p = drop_prob),
@@ -42,14 +48,20 @@ class _CharEmbedding(nn.Module):
         emb = F.dropout(emb, self.drop_prob, self.training)
 
         emb = torch.transpose(emb, 1, 2)
-        emb = self.cnn(emb)
+        
+        emb1 = self.conv1(emb)
+        emb1 = torch.squeeze(emb1, dim=2)
+        
+        emb2= self.conv2(emb)
+        emb2 = torch.squeeze(emb2, dim=2)
 
-        assert(emb.shape == (batch_size*seq_len, self.num_filters, 1))
-        emb = torch.squeeze(emb, dim=2)
-        emb = emb.reshape(batch_size, seq_len, self.num_filters)
+        emb = torch.cat((emb1, emb2), dim=1)
 
+        # assert(emb.shape == (batch_size*seq_len, self.num_filters, 1))
+        #emb = torch.squeeze(emb, dim=2)
+        emb = emb.reshape(batch_size, seq_len, -1)
 
-        assert(emb.shape == (batch_size, seq_len, self.num_filters))
+        assert(emb.shape == (batch_size, seq_len, self.num_filters *2))
 
         return emb
 
@@ -68,7 +80,7 @@ class BiDAFWordPlusCharEmbedding(nn.Module):
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
         self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = self.num_filters)
 
-        self.proj = nn.Linear(self.word_embed_size + self.num_filters, hidden_size, bias=False)
+        self.proj = nn.Linear(self.word_embed_size + self.num_filters*2, hidden_size, bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
 
     def forward(self, word_idxs, char_idxs):
@@ -76,7 +88,7 @@ class BiDAFWordPlusCharEmbedding(nn.Module):
         char_emb = self.char_embed(char_idxs)
 
         (batch_size, seq_len, _) = word_emb.shape
-        assert(char_emb.shape == (batch_size, seq_len, self.num_filters))
+        assert(char_emb.shape == (batch_size, seq_len, self.num_filters * 2))
         
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
         #word_projection = self.word_proj(word_emb)
