@@ -167,7 +167,11 @@ class QANet(nn.Module):
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
         super(QANet, self).__init__()
         
-        self.char_embed_size = 200
+        self.num_filters = 100
+
+        # Since we are using 2 conv nets and concatenating the output of the two, char embed size if self.num_filters*2
+        self.char_embed_size = self.num_filters * 2
+        
         self.word_embed_size = word_vectors.size(1)
         self.hidden_size = hidden_size
 
@@ -175,7 +179,7 @@ class QANet(nn.Module):
                                     char_vectors=char_vectors,
                                     hidden_size=hidden_size,
                                     drop_prob=drop_prob,
-                                    num_filters=self.char_embed_size)
+                                    num_filters=self.num_filters)
 
         self.num_conv_filters = 128
 
