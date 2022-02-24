@@ -70,10 +70,10 @@ class Encoder(nn.Module):
         self.ffn_layer_norm = nn.LayerNorm(num_filters)
 
         self.ffn_1 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
-        nn.init.xavier_uniform_(self.ffn_1)
+        nn.init.xavier_uniform_(self.ffn_1.weight)
 
         self.ffn_2 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
-        nn.init.xavier_uniform_(self.ffn_2)
+        nn.init.xavier_uniform_(self.ffn_2.weight)
 
 
     def forward(self, x):
@@ -93,23 +93,23 @@ class Encoder(nn.Module):
         return out
 
 class SelfAttention(nn.Module):
-    def __init__(self, n_embed=128, n_head=8):
+    def __init__(self, n_embed=128, n_head=8, attn_pdrop=0.1, resid_pdrop=0.1):
         super(SelfAttention, self).__init__()
         self.n_head = n_head
         self.n_embed = n_embed
-        assert self.n_embd % self.n_head == 0
+        assert self.n_embed % self.n_head == 0
         # key, query, value projections for all heads
         self.key = nn.Linear(self.n_embed, self.n_embed)
         self.query = nn.Linear(self.n_embed, self.n_embed)
         self.value = nn.Linear(self.n_embed, self.n_embed)
         # regularization
-        self.attn_drop = nn.Dropout(config.attn_pdrop)
-        self.resid_drop = nn.Dropout(config.resid_pdrop)
+        self.attn_drop = nn.Dropout(attn_pdrop)
+        self.resid_drop = nn.Dropout(resid_pdrop)
         # output projection
         self.proj = nn.Linear(self.n_embed, self.n_embed)
         # causal mask to ensure that attention is only applied to the left in the input sequence
-        self.register_buffer("mask", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
-        self.n_head = config.n_head
+        # self.register_buffer("mask", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
+        self.register_buffer("mask", torch.tril(torch.ones(self.n_embed, self.n_embed)).view(1, 1, self.n_embed, self.n_embed))
 
     def forward(self, x, layer_past=None):
         B, T, C = x.size()
@@ -145,7 +145,7 @@ class DepthwiseSeparableConv(nn.Module):
 class PositionalEncoder(nn.Module):
     #Reference: https://github.com/tatp22/multidim-positional-encoding/blob/master/positional_encodings/positional_encodings.py
     def __init__(self, in_channels):
-        super.(PositionalEncoding, self).__init__()
+        super(PositionalEncoder, self).__init__()
 
         if in_channels%2 == 0:
             self.channels = in_channels

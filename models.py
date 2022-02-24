@@ -177,27 +177,33 @@ class QANet(nn.Module):
                                     drop_prob=drop_prob,
                                     num_filters=self.char_embed_size)
 
-        self.embedding_encoder_context =  None
-        self.embedding_encoder_question = None
-        # self.enc = layers.RNNEncoder(input_size=hidden_size,
-        #                              hidden_size=hidden_size,
-        #                              num_layers=1,
-        #                              drop_prob=drop_prob)
+        self.num_conv_filters = 128
 
-        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
-                                         drop_prob=drop_prob)
+        self.embedding_encoder_context =  layers_qanet.Encoder(input_size=hidden_size*2,
+                                                                num_filters=self.num_conv_filters, 
+                                                                kernel_size=7, 
+                                                                num_conv_layers=4, 
+                                                                num_heads=8, 
+                                                                drop_prob=drop_prob)
 
-        # self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
-        #                              hidden_size=hidden_size,
-        #                              num_layers=2,
-        #                              drop_prob=drop_prob)
+        self.embedding_encoder_question =  layers_qanet.Encoder(input_size=hidden_size*2,
+                                                                num_filters=self.num_conv_filters, 
+                                                                kernel_size=7, 
+                                                                num_conv_layers=4, 
+                                                                num_heads=8, 
+                                                                drop_prob=drop_prob)
 
-        self.encoder_block0 = None
-        self.encoder_block1 = None
-        self.encoder_block2 = None
+        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size, drop_prob=drop_prob)
 
-        self.out = layers_qanet.QANetOutput(hidden_size=hidden_size,
-                                      drop_prob=drop_prob)
+        self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(input_size=hidden_size*2,
+                                                                num_filters=self.num_conv_filters,
+                                                                kernel_size=5,
+                                                                num_conv_layers=2,
+                                                                num_heads=8,
+                                                                drop_prob=drop_prob) for _ in range(7)])
+        
+
+        self.out = layers_qanet.QANetOutput(hidden_size=hidden_size, drop_prob=drop_prob)
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
@@ -226,11 +232,20 @@ class QANet(nn.Module):
                        c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
 
         assert(att.shape == (batch_size, c_len, 8 * self.hidden_size))
+        m0 = att
 
-        m0 = self.encoder_block0(att)
-        m1 = self.encoder_block1(m0)
-        m2 = self.encoder_block2(m1)
+        for i, enc in self.model_encoders:
+            m0 = enc(m0)
+        m1 = m0
 
-        out = self.out(m0, m1, m2, c_mask)
+        for i, enc in self.model_encoders:
+            m0 = enc(m0)
+        m2 = m0
+
+        for i, enc in self.model_encoders:
+            m0 = enc(m0)
+        m3 = m0
+
+        out = self.out(m1, m2, m3, c_mask)
 
         return out
