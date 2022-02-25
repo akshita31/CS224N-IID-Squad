@@ -172,16 +172,7 @@ class PositionalEncoder(nn.Module):
         self.frequency_factor = 1.0 / (10000 ** (torch.arange(0, self.channels, 2).float() / self.channels))
 
     def forward(self, tensor):
-        # (batch_size, seq_len, hidden_size)
-        # pos_x = torch.arange(0, x.shape[1])
-        # frequency_x = torch.einsum("i,j->ij", pos_x, self.frequency_factor)
-        # emb_x = torch.cat((frequency_x.sin(), frequency_x.cos()), dim=-1)
 
-        # emb = torch.zeros((x, self.channels), device=x.device).type(x.type())
-        # emb[:, : self.channels] = emb_x
-
-        # return emb[None, :, :orig_ch].repeat(batch_size, 1, 1)
-        # print("input", tensor.shape)
         batch_size, x, orig_ch = tensor.shape
         pos_x = torch.arange(x, device=tensor.device).type(self.frequency_factor.type())
         sin_inp_x = torch.einsum("i,j->ij", pos_x, self.frequency_factor)
