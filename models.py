@@ -170,9 +170,9 @@ class QANet(nn.Module):
         self.num_filters = 100
 
         # Since we are using 2 conv nets and concatenating the output of the two, char embed size if self.num_filters*2
-        self.char_embed_size = self.num_filters * 2
+        # self.char_embed_size = self.num_filters * 2
         
-        self.word_embed_size = word_vectors.size(1)
+        # self.word_embed_size = word_vectors.size(1)
         self.hidden_size = hidden_size
 
         self.emb = layers_qanet.QANetEmbedding(word_vectors=word_vectors,
@@ -181,16 +181,17 @@ class QANet(nn.Module):
                                     drop_prob=drop_prob,
                                     num_filters=self.num_filters)
 
+        self.embed_dim = self.emb.GetOutputEmbeddingDim()
         self.num_conv_filters = 128
 
-        self.embedding_encoder_context =  layers_qanet.Encoder(input_size=hidden_size*2,
+        self.embedding_encoder_context =  layers_qanet.Encoder(input_size=self.embed_dim,
                                                                 num_filters=self.num_conv_filters, 
                                                                 kernel_size=7, 
                                                                 num_conv_layers=4, 
                                                                 num_heads=8, 
                                                                 drop_prob=drop_prob)
 
-        self.embedding_encoder_question =  layers_qanet.Encoder(input_size=hidden_size*2,
+        self.embedding_encoder_question =  layers_qanet.Encoder(input_size=self.embed_dim,
                                                                 num_filters=self.num_conv_filters, 
                                                                 kernel_size=7, 
                                                                 num_conv_layers=4, 
@@ -216,14 +217,11 @@ class QANet(nn.Module):
         batch_size = cw_idxs.shape[0]
 
         # In QANet the projection is not applied and output of highway network is same size as the word+char embedding dim
-        c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, hidden_size)
-        q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, hidden_size)
+        c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, self.embed_dim)
+        q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, self.embed_dim)
 
         print(c_emb.shape)
         print(q_emb.shape)
-
-        #assert(c_emb.shape == (batch_size, c_len, self.word_embed_size + self.char_embed_size))
-        #assert(q_emb.shape == (batch_size, q_len, self.word_embed_size + self.char_embed_size))
 
         # Input of this encoder layer is (word_embed_size + char_embed_size and output is the hidden_size)
         c_enc = self.embedding_encoder_context(c_emb)
@@ -258,3 +256,7 @@ class QANet(nn.Module):
         out = self.out(m1, m2, m3, c_mask)
 
         return out
+
+class QANetConfig:
+    def __init__(self) -> None:
+        pass

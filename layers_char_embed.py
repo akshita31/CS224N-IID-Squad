@@ -64,6 +64,9 @@ class _CharEmbedding(nn.Module):
         assert(emb.shape == (batch_size, seq_len, self.num_filters *2))
 
         return emb
+    
+    def GetCharEmbedShape(self):
+        return self.num_filters *2
 
 class BiDAFWordPlusCharEmbedding(nn.Module):
     """Combines the Word and Character embedding and then applies a transformation and highway network.

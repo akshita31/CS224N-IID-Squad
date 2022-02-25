@@ -47,16 +47,17 @@ class QANetOutput(nn.Module):
         return log_p1, log_p2
 
 class Encoder(nn.Module):
-    def __init__(self, input_size=500, num_filters=128, kernel_size=7, num_conv_layers=4, num_heads=8, drop_prob=0.1):
+    def __init__(self, input_size, num_filters, kernel_size, num_conv_layers, num_heads, drop_prob=0.2):
         super(Encoder, self).__init__()
 
         self.positional_encoder = PositionalEncoder(input_size)
-        
+        # self.dim_reduction_conv1d = nn.Conv1d()
+
         #depthwise separable conv
         self.conv_layers = nn.ModuleList([])
         self.conv_layer_norms = nn.ModuleList([])
 
-        conv_input_size = 700
+        conv_input_size = input_size
         for i in range(num_conv_layers):
             if i==0:
                 self.conv_layer_norms.append(nn.LayerNorm(conv_input_size))
@@ -81,8 +82,15 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         #TODO: implement residual block
+        (batch_size, seq_len, input_embed_dim) = x.shape
         out = self.positional_encoder(x)
-        out = torch.cat((x,out), dim=2)
+        assert (out.size() == (batch_size, seq_len, input_embed_dim))
+
+        print('Positional Encoding shape is', out.shape)
+
+        out = out.add(x)
+        assert (out.size() == (batch_size, seq_len, input_embed_dim))
+
         for i, conv_layer in enumerate(self.conv_layers):
             out = self.conv_layer_norms[i](out)
             out = torch.transpose(out,1,2)
@@ -118,7 +126,9 @@ class SelfAttention(nn.Module):
         self.register_buffer("mask", torch.tril(torch.ones(self.n_embed, self.n_embed)).view(1, 1, self.n_embed, self.n_embed))
 
     def forward(self, x, layer_past=None):
-        B, T, C = x.size()
+        B, T, C = x.size() #64, 287, 128
+
+        print("x_size", x.size())
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         k = self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
@@ -127,6 +137,7 @@ class SelfAttention(nn.Module):
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        print("att shape", att.shape)
         att = att.masked_fill(self.mask[:,:,:T,:T] == 0, -1e10) # todo: just use float('-inf') instead?
         att = F.softmax(att, dim=-1)
         att = self.attn_drop(att)
@@ -170,17 +181,17 @@ class PositionalEncoder(nn.Module):
         # emb[:, : self.channels] = emb_x
 
         # return emb[None, :, :orig_ch].repeat(batch_size, 1, 1)
-        print("input", tensor.shape)
+        # print("input", tensor.shape)
         batch_size, x, orig_ch = tensor.shape
         pos_x = torch.arange(x, device=tensor.device).type(self.frequency_factor.type())
         sin_inp_x = torch.einsum("i,j->ij", pos_x, self.frequency_factor)
-        print("sin_inp_x apply sincos", sin_inp_x.shape)
+        # print("sin_inp_x apply sincos", sin_inp_x.shape)
         emb_x = torch.cat((sin_inp_x.sin(), sin_inp_x.cos()), dim=-1)
-        print("embx apply sincos", emb_x.shape)
+        #print("embx apply sincos", emb_x.shape)
         emb = torch.zeros((x, self.channels), device=tensor.device).type(tensor.type())
-        print("emb zeros", emb.shape)
+        #print("emb zeros", emb.shape)
         emb[:, : self.channels] = emb_x
-        print("output", emb[None, :, :orig_ch].repeat(batch_size, 1, 1).shape)
+        #print("output", emb[None, :, :orig_ch].repeat(batch_size, 1, 1).shape)
         return emb[None, :, :orig_ch].repeat(batch_size, 1, 1)
       
 class QANetEmbedding(nn.Module):
@@ -192,12 +203,12 @@ class QANetEmbedding(nn.Module):
         super(QANetEmbedding, self).__init__()
         self.drop_prob = drop_prob
         self.word_embed_size = word_vectors.size(1)
-        self.char_embed_size = num_filters*2
         self.batch_size = word_vectors.size(0)
         self.hidden_size = hidden_size
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
         self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = num_filters)
+        self.char_embed_size = self.char_embed.GetCharEmbedShape()
 
         self.hwy = HighwayEncoder(2, self.char_embed_size + self.word_embed_size)
         #self.hwy = HighwayEncoder(2, (self.batch_size, self.word_embed_size, self.num_filters + self.word_embed_size))
@@ -207,22 +218,20 @@ class QANetEmbedding(nn.Module):
         char_emb = self.char_embed(char_idxs)
 
         (batch_size, seq_len, _) = word_emb.shape
-        print(word_emb.shape)
-        print(batch_size)
-        print(seq_len)
-        print(self.char_embed_size)
-        print(char_emb.shape)
+        # print(word_emb.shape)
+        # print(batch_size)
+        # print(seq_len)
+        # print(self.char_embed_size)
+        # print(char_emb.shape)
         assert(char_emb.shape == (batch_size, seq_len, self.char_embed_size))
         
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
-        #word_projection = self.word_proj(word_emb)
         
-        #concatenate to produce the final embedding
         emb = torch.cat((word_emb, char_emb), dim = 2)
-        #emb = self.proj(emb)
-        #assert(emb.shape == (batch_size, seq_len, self.hidden_size))
+        emb = self.hwy(emb)
 
-        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
-
-        assert(emb.shape == (batch_size, seq_len, self.word_embed_size + self.char_embed_size))
+        assert(emb.shape == (batch_size, seq_len, self.GetOutputEmbeddingDim()))
         return emb
+    
+    def GetOutputEmbeddingDim(self):
+        return self.word_embed_size + self.char_embed_size
