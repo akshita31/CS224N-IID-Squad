@@ -51,7 +51,6 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         self.positional_encoder = PositionalEncoder(input_size)
-        # self.dim_reduction_conv1d = nn.Conv1d()
 
         #depthwise separable conv
         self.conv_layers = nn.ModuleList([])
@@ -82,14 +81,15 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         #TODO: implement residual block
-        (batch_size, seq_len, input_embed_dim) = x.shape
-        out = self.positional_encoder(x)
-        assert (out.size() == (batch_size, seq_len, input_embed_dim))
 
+        print('Input to encoder shape is', x.shape)
+        (batch_size, seq_len, d_model) = x.shape
+
+        out = self.positional_encoder(x)
         print('Positional Encoding shape is', out.shape)
+        assert (out.size() == (batch_size, seq_len, d_model))
 
         out = out.add(x)
-        assert (out.size() == (batch_size, seq_len, input_embed_dim))
 
         for i, conv_layer in enumerate(self.conv_layers):
             out = self.conv_layer_norms[i](out)
@@ -150,9 +150,11 @@ class SelfAttention(nn.Module):
 
 class DepthwiseSeparableConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=7):
+
+        # Can refernce this from - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L39
         super(DepthwiseSeparableConv, self).__init__()
-        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size)
-        self.pointwiseConv = nn.Conv1d(in_channels, out_channels, kernel_size=1)
+        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size, padding = kernel_size//2)
+        self.pointwiseConv = nn.Conv1d(in_channels, out_channels, kernel_size=1, padding = 0)
 
     def forward(self, x):
         out = self.depthwiseConv(x)
