@@ -191,14 +191,14 @@ class QANet(nn.Module):
             kernel_size=5)
 
         # Output of the Convolutions above will be fed into the encoder
-        self.embedding_encoder_context =  layers_qanet.Encoder(input_size=self.d_model,
+        self.embedding_encoder_context =  layers_qanet.Encoder(d_model=self.d_model,
                                                                 num_filters=self.num_conv_filters, 
                                                                 kernel_size=7, 
                                                                 num_conv_layers=4, 
                                                                 num_heads=8, 
                                                                 drop_prob=drop_prob)
 
-        self.embedding_encoder_question =  layers_qanet.Encoder(input_size=self.d_model,
+        self.embedding_encoder_question =  layers_qanet.Encoder(d_model=self.d_model,
                                                                 num_filters=self.num_conv_filters, 
                                                                 kernel_size=7, 
                                                                 num_conv_layers=4, 
@@ -207,7 +207,7 @@ class QANet(nn.Module):
 
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size, drop_prob=drop_prob)
 
-        self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(input_size=hidden_size*2,
+        self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(d_model=hidden_size*2,
                                                                 num_filters=self.num_conv_filters,
                                                                 kernel_size=5,
                                                                 num_conv_layers=2,

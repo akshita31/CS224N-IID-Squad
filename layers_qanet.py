@@ -47,21 +47,21 @@ class QANetOutput(nn.Module):
         return log_p1, log_p2
 
 class Encoder(nn.Module):
-    def __init__(self, input_size, num_filters, kernel_size, num_conv_layers, num_heads, drop_prob=0.2):
+    def __init__(self, d_model, num_filters, kernel_size, num_conv_layers, num_heads, drop_prob=0.2):
         super(Encoder, self).__init__()
 
-        self.positional_encoder = PositionalEncoder(input_size)
+        self.positional_encoder = PositionalEncoder(d_model)
 
         #depthwise separable conv
         self.conv_layers = nn.ModuleList([])
         self.conv_layer_norms = nn.ModuleList([])
 
-        conv_input_size = input_size
+        # num_filters and d_model variables should be same = 128. Maybe we can collapse them into 1
         for i in range(num_conv_layers):
             if i==0:
-                self.conv_layer_norms.append(nn.LayerNorm(conv_input_size))
-                self.conv_layers.append(DepthwiseSeparableConv(conv_input_size, num_filters, kernel_size))
-            else:
+                self.conv_layer_norms.append(nn.LayerNorm(d_model))
+                self.conv_layers.append(DepthwiseSeparableConv(d_model, num_filters, kernel_size))
+            else: # to do : check if this is needed
                 self.conv_layer_norms.append(nn.LayerNorm(num_filters))
                 self.conv_layers.append(DepthwiseSeparableConv(num_filters, num_filters, kernel_size))
 
@@ -93,10 +93,11 @@ class Encoder(nn.Module):
 
         for i, conv_layer in enumerate(self.conv_layers):
             out = self.conv_layer_norms[i](out)
-            out = torch.transpose(out,1,2)
+            out = torch.transpose(out, 1, 2)
             out = conv_layer(out)
-            out = torch.transpose(out,2,1)
+            out = torch.transpose(out, 1, 2)
 
+        assert (out.size() == (batch_size, seq_len, d_model))
         out = self.att_layer_norm(out)
         out = self.att(out)
         
@@ -201,9 +202,9 @@ class QANetEmbedding(nn.Module):
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
         self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = num_filters)
-        self.char_embed_size = self.char_embed.GetCharEmbedShape()
+        self.chat_embed_dim = self.char_embed.GetCharEmbedDim()
 
-        self.hwy = HighwayEncoder(2, self.char_embed_size + self.word_embed_size)
+        self.hwy = HighwayEncoder(2, self.chat_embed_dim + self.word_embed_size)
         #self.hwy = HighwayEncoder(2, (self.batch_size, self.word_embed_size, self.num_filters + self.word_embed_size))
 
     def forward(self, word_idxs, char_idxs):
@@ -214,9 +215,9 @@ class QANetEmbedding(nn.Module):
         # print(word_emb.shape)
         # print(batch_size)
         # print(seq_len)
-        # print(self.char_embed_size)
+        # print(self.chat_embed_dim)
         # print(char_emb.shape)
-        assert(char_emb.shape == (batch_size, seq_len, self.char_embed_size))
+        assert(char_emb.shape == (batch_size, seq_len, self.chat_embed_dim))
         
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
         
@@ -227,4 +228,4 @@ class QANetEmbedding(nn.Module):
         return emb
     
     def GetOutputEmbeddingDim(self):
-        return self.word_embed_size + self.char_embed_size
+        return self.word_embed_size + self.chat_embed_dim

@@ -65,7 +65,7 @@ class _CharEmbedding(nn.Module):
 
         return emb
     
-    def GetCharEmbedShape(self):
+    def GetCharEmbedDim(self):
         return self.num_filters *2
 
 class BiDAFWordPlusCharEmbedding(nn.Module):
