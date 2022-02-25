@@ -172,14 +172,16 @@ class QANetEmbedding(nn.Module):
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, num_filters):
         super(QANetEmbedding, self).__init__()
         self.drop_prob = drop_prob
-        self.num_filters = num_filters
         self.word_embed_size = word_vectors.size(1)
+        self.char_embed_size = num_filters*2
+        self.batch_size = word_vectors.size(0)
         self.hidden_size = hidden_size
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
-        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = self.num_filters)
+        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = num_filters)
 
-        self.hwy = HighwayEncoder(2, self.num_filters + self.word_embed_size)
+        self.hwy = HighwayEncoder(2, self.char_embed_size + self.word_embed_size)
+        #self.hwy = HighwayEncoder(2, (self.batch_size, self.word_embed_size, self.num_filters + self.word_embed_size))
 
     def forward(self, word_idxs, char_idxs):
         word_emb = self.word_embed(word_idxs)
@@ -191,7 +193,7 @@ class QANetEmbedding(nn.Module):
         print(seq_len)
         print(self.num_filters)
         print(char_emb.shape)
-        assert(char_emb.shape == (batch_size, seq_len, self.num_filters))
+        assert(char_emb.shape == (batch_size, seq_len, self.char_embed_size))
         
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
         #word_projection = self.word_proj(word_emb)
@@ -203,5 +205,5 @@ class QANetEmbedding(nn.Module):
 
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
 
-        assert(emb.shape == (batch_size, seq_len, self.word_embed_size + self.num_filters))
+        assert(emb.shape == (batch_size, seq_len, self.word_embed_size + self.char_embed_size))
         return emb
