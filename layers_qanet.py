@@ -3,6 +3,7 @@ from layers_char_embed import _CharEmbedding
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 from util import masked_softmax
 
@@ -54,13 +55,15 @@ class Encoder(nn.Module):
         #depthwise separable conv
         self.conv_layers = nn.ModuleList([])
         self.conv_layer_norms = nn.ModuleList([])
+
+        conv_input_size = 700
         for i in range(num_conv_layers):
             if i==0:
-                self.conv_layer_norms.append(nn.LayerNorm(input_size))
+                self.conv_layer_norms.append(nn.LayerNorm(conv_input_size))
+                self.conv_layers.append(DepthwiseSeparableConv(conv_input_size, num_filters, kernel_size))
             else:
                 self.conv_layer_norms.append(nn.LayerNorm(num_filters))
-
-            self.conv_layers.append(DepthwiseSeparableConv(input_size, num_filters, kernel_size))
+                self.conv_layers.append(DepthwiseSeparableConv(num_filters, num_filters, kernel_size))
 
         #self attention
         self.att_layer_norm = nn.LayerNorm(num_filters)
@@ -78,10 +81,13 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         #TODO: implement residual block
-        out = self.positional_encoder.forward(x)
+        out = self.positional_encoder(x)
+        out = torch.cat((x,out), dim=2)
         for i, conv_layer in enumerate(self.conv_layers):
             out = self.conv_layer_norms[i](out)
+            out = torch.transpose(out,1,2)
             out = conv_layer(out)
+            out = torch.transpose(out,2,1)
 
         out = self.att_layer_norm(out)
         out = self.att(out)
@@ -132,9 +138,9 @@ class SelfAttention(nn.Module):
         return y
 
 class DepthwiseSeparableConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size):
+    def __init__(self, in_channels, out_channels, kernel_size=7):
         super(DepthwiseSeparableConv, self).__init__()
-        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size, groups=in_channels)
+        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size)
         self.pointwiseConv = nn.Conv1d(in_channels, out_channels, kernel_size=1)
 
     def forward(self, x):
@@ -154,15 +160,28 @@ class PositionalEncoder(nn.Module):
 
         self.frequency_factor = 1.0 / (10000 ** (torch.arange(0, self.channels, 2).float() / self.channels))
 
-    def forward(self, x):
-        pos_x = torch.arange(x)
-        frequency_x = torch.einsum("i,j->ij", pos_x, self.frequency_factor)
-        emb_x = torch.cat((frequency_x.sin(), frequency_x.cos()), dim=-1)
+    def forward(self, tensor):
+        # (batch_size, seq_len, hidden_size)
+        # pos_x = torch.arange(0, x.shape[1])
+        # frequency_x = torch.einsum("i,j->ij", pos_x, self.frequency_factor)
+        # emb_x = torch.cat((frequency_x.sin(), frequency_x.cos()), dim=-1)
 
-        emb = torch.zeros((x, self.channels))
+        # emb = torch.zeros((x, self.channels), device=x.device).type(x.type())
+        # emb[:, : self.channels] = emb_x
+
+        # return emb[None, :, :orig_ch].repeat(batch_size, 1, 1)
+        print("input", tensor.shape)
+        batch_size, x, orig_ch = tensor.shape
+        pos_x = torch.arange(x, device=tensor.device).type(self.frequency_factor.type())
+        sin_inp_x = torch.einsum("i,j->ij", pos_x, self.frequency_factor)
+        print("sin_inp_x apply sincos", sin_inp_x.shape)
+        emb_x = torch.cat((sin_inp_x.sin(), sin_inp_x.cos()), dim=-1)
+        print("embx apply sincos", emb_x.shape)
+        emb = torch.zeros((x, self.channels), device=tensor.device).type(tensor.type())
+        print("emb zeros", emb.shape)
         emb[:, : self.channels] = emb_x
-        
-        return emb[None, :, :x.shape]
+        print("output", emb[None, :, :orig_ch].repeat(batch_size, 1, 1).shape)
+        return emb[None, :, :orig_ch].repeat(batch_size, 1, 1)
       
 class QANetEmbedding(nn.Module):
     """Combines the Word and Character embedding and then applies a transformation and highway network.
@@ -191,7 +210,7 @@ class QANetEmbedding(nn.Module):
         print(word_emb.shape)
         print(batch_size)
         print(seq_len)
-        print(self.num_filters)
+        print(self.char_embed_size)
         print(char_emb.shape)
         assert(char_emb.shape == (batch_size, seq_len, self.char_embed_size))
         

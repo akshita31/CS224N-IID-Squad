@@ -219,8 +219,11 @@ class QANet(nn.Module):
         c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, hidden_size)
         q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, hidden_size)
 
-        assert(c_emb.shape == (batch_size, c_len, self.word_embed_size + self.char_embed_size))
-        assert(q_emb.shape == (batch_size, q_len, self.word_embed_size + self.char_embed_size))
+        print(c_emb.shape)
+        print(q_emb.shape)
+
+        #assert(c_emb.shape == (batch_size, c_len, self.word_embed_size + self.char_embed_size))
+        #assert(q_emb.shape == (batch_size, q_len, self.word_embed_size + self.char_embed_size))
 
         # Input of this encoder layer is (word_embed_size + char_embed_size and output is the hidden_size)
         c_enc = self.embedding_encoder_context(c_emb)
@@ -228,8 +231,10 @@ class QANet(nn.Module):
         # c_enc = self.enc(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)
         # q_enc = self.enc(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
 
-        assert(c_enc.shape == (batch_size, c_len, self.hidden_size))
-        assert(q_enc.shape == (batch_size, q_len, self.hidden_size))
+        print(c_enc.shape)
+        print(q_enc.shape)
+        # assert(c_enc.shape == (batch_size, c_len, self.hidden_size))
+        # assert(q_enc.shape == (batch_size, q_len, self.hidden_size))
 
         # compute attention same as BiDAF
         att = self.att(c_enc, q_enc,
