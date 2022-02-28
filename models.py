@@ -240,8 +240,8 @@ class QANet(nn.Module):
         c_emb = torch.transpose(c_emb, 1, 2) # (batch_size, c_len, self.d_model)
         q_emb = torch.transpose(q_emb, 1, 2) # (batch_size, q_len, self.d_model)
         
-        c_enc = self.embedding_encoder_context(c_emb)
-        q_enc = self.embedding_encoder_question(q_emb)
+        c_enc = self.embedding_encoder_context(c_emb, c_mask)
+        q_enc = self.embedding_encoder_question(q_emb, q_mask)
 
         print(c_enc.shape)
         print(q_enc.shape)

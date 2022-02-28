@@ -79,7 +79,7 @@ class Encoder(nn.Module):
         nn.init.xavier_uniform_(self.ffn_2.weight)
 
 
-    def forward(self, x):
+    def forward(self, x, mask):
         #TODO: implement residual block
 
         print('Input to encoder shape is', x.shape)
@@ -126,24 +126,26 @@ class SelfAttention(nn.Module):
         # self.register_buffer("mask", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
         self.register_buffer("mask", torch.tril(torch.ones(self.n_embed, self.n_embed)).view(1, 1, self.n_embed, self.n_embed))
 
-    def forward(self, x, layer_past=None):
-        B, T, C = x.size() #64, 287, 128
+    def forward(self, x, mask, layer_past=None):
+        B, seq_len, C = x.size() #64, 287, 128
 
         print("x_size", x.size())
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        k = self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        q = self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        v = self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        k = self.key(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        q = self.query(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        v = self.value(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
         print("att shape", att.shape)
-        att = att.masked_fill(self.mask[:,:,:T,:T] == 0, -1e10) # todo: just use float('-inf') instead?
-        att = F.softmax(att, dim=-1)
+        #att = att.masked_fill(self.mask[:,:,:T,:T] == 0, -1e10) # todo: just use float('-inf') instead?
+        #att = F.softmax(att, dim=-1)
+
+        att = masked_softmax(att, mask = mask, dim = -1)
         att = self.attn_drop(att)
         y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+        y = y.transpose(1, 2).contiguous().view(B, seq_len, C) # re-assemble all head outputs side by side
 
         # output projection
         y = self.resid_drop(self.proj(y))
@@ -202,9 +204,9 @@ class QANetEmbedding(nn.Module):
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
         self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = num_filters)
-        self.chat_embed_dim = self.char_embed.GetCharEmbedDim()
+        self.char_embed_dim = self.char_embed.GetCharEmbedDim()
 
-        self.hwy = HighwayEncoder(2, self.chat_embed_dim + self.word_embed_size)
+        self.hwy = HighwayEncoder(2, self.char_embed_dim + self.word_embed_size)
         #self.hwy = HighwayEncoder(2, (self.batch_size, self.word_embed_size, self.num_filters + self.word_embed_size))
 
     def forward(self, word_idxs, char_idxs):
@@ -215,9 +217,9 @@ class QANetEmbedding(nn.Module):
         # print(word_emb.shape)
         # print(batch_size)
         # print(seq_len)
-        # print(self.chat_embed_dim)
+        # print(self.char_embed_dim)
         # print(char_emb.shape)
-        assert(char_emb.shape == (batch_size, seq_len, self.chat_embed_dim))
+        assert(char_emb.shape == (batch_size, seq_len, self.char_embed_dim))
         
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
         
@@ -228,4 +230,4 @@ class QANetEmbedding(nn.Module):
         return emb
     
     def GetOutputEmbeddingDim(self):
-        return self.word_embed_size + self.chat_embed_dim
+        return self.word_embed_size + self.char_embed_dim
