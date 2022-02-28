@@ -156,7 +156,7 @@ class BiDAFAttention(nn.Module):
         # c is the context. Its size will be (batch_size, context_len, hidden_size) as this is coming from the hidden state of the RNN
         # q is the query. Its size will be (batch_size, query_len, hidden_size) 
 
-        batch_size, c_len, _ = c.size()
+        batch_size, c_len, hidden_size = c.size()
         q_len = q.size(1)
         s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
         c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
@@ -171,7 +171,7 @@ class BiDAFAttention(nn.Module):
         b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
 
         x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
-
+        assert(x.shape == (batch_size, c_len, 4 * hidden_size))
         return x
 
     def get_similarity_matrix(self, c, q):

@@ -164,14 +164,12 @@ class QANet(nn.Module):
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
+    def __init__(self, word_vectors, char_vectors, drop_prob=0.):
         super(QANet, self).__init__()
         # self.word_embed_size = word_vectors.size(1)
-        self.hidden_size = hidden_size
 
         self.emb = layers_qanet.QANetEmbedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
-                                    hidden_size=hidden_size,
                                     drop_prob=drop_prob,
                                     num_filters=100)
 
@@ -205,9 +203,9 @@ class QANet(nn.Module):
                                                                 num_heads=8, 
                                                                 drop_prob=drop_prob)
 
-        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size, drop_prob=drop_prob)
+        self.att = layers.BiDAFAttention(hidden_size=self.d_model, drop_prob=drop_prob)
 
-        self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(d_model=hidden_size*2,
+        self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(d_model=self.d_model,
                                                                 num_filters=self.num_conv_filters,
                                                                 kernel_size=5,
                                                                 num_conv_layers=2,
@@ -215,7 +213,7 @@ class QANet(nn.Module):
                                                                 drop_prob=drop_prob) for _ in range(7)])
         
 
-        self.out = layers_qanet.QANetOutput(hidden_size=hidden_size, drop_prob=drop_prob)
+        self.out = layers_qanet.QANetOutput(d_model=self.d_model, drop_prob=drop_prob)
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
@@ -250,20 +248,20 @@ class QANet(nn.Module):
 
         # compute attention same as BiDAF
         att = self.att(c_enc, q_enc,
-                       c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
+                       c_mask, q_mask)    # (batch_size, c_len, 4 * d_model)
 
-        assert(att.shape == (batch_size, c_len, 8 * self.hidden_size))
+        # assert(att.shape == (batch_size, c_len, 8 * self.d_model))
         m0 = att
 
-        for i, enc in self.model_encoders:
+        for i, enc in enumerate(self.model_encoders):
             m0 = enc(m0)
         m1 = m0
 
-        for i, enc in self.model_encoders:
+        for i, enc in enumerate(self.model_encoders):
             m0 = enc(m0)
         m2 = m0
 
-        for i, enc in self.model_encoders:
+        for i, enc in enumerate(self.model_encoders):
             m0 = enc(m0)
         m3 = m0
 
