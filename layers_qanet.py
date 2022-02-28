@@ -79,7 +79,7 @@ class Encoder(nn.Module):
         nn.init.xavier_uniform_(self.ffn_2.weight)
 
 
-    def forward(self, x, mask):
+    def forward(self, x):
         #TODO: implement residual block
 
         print('Input to encoder shape is', x.shape)
@@ -122,11 +122,12 @@ class SelfAttention(nn.Module):
         self.resid_drop = nn.Dropout(resid_pdrop)
         # output projection
         self.proj = nn.Linear(self.n_embed, self.n_embed)
-        # causal mask to ensure that attention is only applied to the left in the input sequence
-        # self.register_buffer("mask", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
-        self.register_buffer("mask", torch.tril(torch.ones(self.n_embed, self.n_embed)).view(1, 1, self.n_embed, self.n_embed))
 
-    def forward(self, x, mask, layer_past=None):
+        max_seq_len = 310
+        # causal mask to ensure that attention is only applied to the left in the input sequence
+        self.register_buffer("mask", torch.tril(torch.ones(max_seq_len, max_seq_len)).view(1, 1, max_seq_len, max_seq_len))
+
+    def forward(self, x, layer_past=None):
         B, seq_len, C = x.size() #64, 287, 128
 
         print("x_size", x.size())
@@ -138,17 +139,21 @@ class SelfAttention(nn.Module):
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        assert(att.shape == (B, self.n_head, seq_len, seq_len))
         print("att shape", att.shape)
-        #att = att.masked_fill(self.mask[:,:,:T,:T] == 0, -1e10) # todo: just use float('-inf') instead?
-        #att = F.softmax(att, dim=-1)
+        print("mask shape", mask.shape)
+        att = att.masked_fill(self.mask[:,:,:seq_len,:seq_len] == 0, -1e10) # todo: just use float('-inf') instead?
+        att = F.softmax(att, dim=-1)
 
-        att = masked_softmax(att, mask = mask, dim = -1)
+        #att = masked_softmax(att, mask = mask, dim = -1)
         att = self.attn_drop(att)
         y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
         y = y.transpose(1, 2).contiguous().view(B, seq_len, C) # re-assemble all head outputs side by side
 
         # output projection
         y = self.resid_drop(self.proj(y))
+
+        assert (y.shape == (B, seq_len, self.n_embed))
         return y
 
 class DepthwiseSeparableConv(nn.Module):
