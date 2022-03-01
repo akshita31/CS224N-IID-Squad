@@ -17,21 +17,21 @@ class QANetOutput(nn.Module):
         hidden_size (int): Hidden size used in the BiDAF model.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, hidden_size, drop_prob):
+    def __init__(self, d_model, drop_prob):
         super(QANetOutput, self).__init__()
-        self.start_linear = nn.Linear(2*hidden_size, 1, bias = False)
-        self.end_linear = nn.Linear(2*hidden_size,1 , bias = False)
+        self.start_linear = nn.Linear(2*d_model, 1, bias = False)
+        self.end_linear = nn.Linear(2*d_model,1 , bias = False)
 
     def forward(self, m0, m1, m2, mask):
         
-        (batch_size, seq_len, hidden_size) = m0.shape
+        (batch_size, seq_len, d_model) = m0.shape
 
         # (batch_size, seq_len, hidden_size)
         start_enc = torch.cat((m0, m1), dim =2)
         end_enc = torch.cat((m0, m2), dim = 2)
 
-        assert(start_enc.shape == (batch_size, seq_len, 2*hidden_size))
-        assert(end_enc.shape == (batch_size, seq_len, 2*hidden_size))
+        assert(start_enc.shape == (batch_size, seq_len, 2*d_model))
+        assert(end_enc.shape == (batch_size, seq_len, 2*d_model))
 
         # Shapes: (batch_size, seq_len, 1)
         logits_1 = self.start_linear(start_enc)
@@ -72,11 +72,13 @@ class Encoder(nn.Module):
         #feed-forward-layers
         self.ffn_layer_norm = nn.LayerNorm(num_filters)
 
-        self.ffn_1 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
-        nn.init.xavier_uniform_(self.ffn_1.weight)
+        # self.ffn_1 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
+        # nn.init.xavier_uniform_(self.ffn_1.weight)
 
-        self.ffn_2 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
-        nn.init.xavier_uniform_(self.ffn_2.weight)
+        # self.ffn_2 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
+        # nn.init.xavier_uniform_(self.ffn_2.weight)
+
+        self.fc = nn.Linear(num_filters, num_filters, bias = True)
 
 
     def forward(self, x):
@@ -102,9 +104,15 @@ class Encoder(nn.Module):
         out = self.att(out)
         
         out = self.ffn_layer_norm(out)
-        out = self.ffn_1(out)
-        out = self.ffn_2(out)
+        # out = self.ffn_1(out)
+        # out = self.ffn_2(out)
 
+        out = self.fc(out)
+        out = F.relu(out)
+
+        assert (out.shape == (batch_size, seq_len, d_model))
+        ## to do : modify the encoder block to add resideual
+        # reference - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L204
         return out
 
 class SelfAttention(nn.Module):
@@ -122,31 +130,40 @@ class SelfAttention(nn.Module):
         self.resid_drop = nn.Dropout(resid_pdrop)
         # output projection
         self.proj = nn.Linear(self.n_embed, self.n_embed)
+
+        # we want to create a lower matrix so that attention is applied only to the words
+        # that preceed the current word. hence creating a matrix of max_seq_len
+        max_seq_len = 400
         # causal mask to ensure that attention is only applied to the left in the input sequence
-        # self.register_buffer("mask", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
-        self.register_buffer("mask", torch.tril(torch.ones(self.n_embed, self.n_embed)).view(1, 1, self.n_embed, self.n_embed))
+        self.register_buffer("mask", torch.tril(torch.ones(max_seq_len, max_seq_len)).view(1, 1, max_seq_len, max_seq_len))
 
     def forward(self, x, layer_past=None):
-        B, T, C = x.size() #64, 287, 128
+        B, seq_len, C = x.size() #64, 287, 128
 
         print("x_size", x.size())
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        k = self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        q = self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        v = self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        k = self.key(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        q = self.query(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        v = self.value(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        assert(att.shape == (B, self.n_head, seq_len, seq_len))
         print("att shape", att.shape)
-        att = att.masked_fill(self.mask[:,:,:T,:T] == 0, -1e10) # todo: just use float('-inf') instead?
+
+        att = att.masked_fill(self.mask[:,:,:seq_len,:seq_len] == 0, -1e10) # todo: just use float('-inf') instead?
         att = F.softmax(att, dim=-1)
+
+        #att = masked_softmax(att, mask = mask, dim = -1)
         att = self.attn_drop(att)
         y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+        y = y.transpose(1, 2).contiguous().view(B, seq_len, C) # re-assemble all head outputs side by side
 
         # output projection
         y = self.resid_drop(self.proj(y))
+
+        assert (y.shape == (B, seq_len, self.n_embed))
         return y
 
 class DepthwiseSeparableConv(nn.Module):
@@ -193,18 +210,17 @@ class QANetEmbedding(nn.Module):
     Output of this layer will be (batch_size, seq_len, hidden_size)
     """
 
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, num_filters):
+    def __init__(self, word_vectors, char_vectors, drop_prob, num_filters):
         super(QANetEmbedding, self).__init__()
         self.drop_prob = drop_prob
         self.word_embed_size = word_vectors.size(1)
         self.batch_size = word_vectors.size(0)
-        self.hidden_size = hidden_size
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
         self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = num_filters)
-        self.chat_embed_dim = self.char_embed.GetCharEmbedDim()
+        self.char_embed_dim = self.char_embed.GetCharEmbedDim()
 
-        self.hwy = HighwayEncoder(2, self.chat_embed_dim + self.word_embed_size)
+        self.hwy = HighwayEncoder(2, self.char_embed_dim + self.word_embed_size)
         #self.hwy = HighwayEncoder(2, (self.batch_size, self.word_embed_size, self.num_filters + self.word_embed_size))
 
     def forward(self, word_idxs, char_idxs):
@@ -215,9 +231,9 @@ class QANetEmbedding(nn.Module):
         # print(word_emb.shape)
         # print(batch_size)
         # print(seq_len)
-        # print(self.chat_embed_dim)
+        # print(self.char_embed_dim)
         # print(char_emb.shape)
-        assert(char_emb.shape == (batch_size, seq_len, self.chat_embed_dim))
+        assert(char_emb.shape == (batch_size, seq_len, self.char_embed_dim))
         
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
         
@@ -228,4 +244,4 @@ class QANetEmbedding(nn.Module):
         return emb
     
     def GetOutputEmbeddingDim(self):
-        return self.word_embed_size + self.chat_embed_dim
+        return self.word_embed_size + self.char_embed_dim
