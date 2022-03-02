@@ -205,6 +205,11 @@ class QANet(nn.Module):
 
         self.att = layers.BiDAFAttention(hidden_size=self.d_model, drop_prob=drop_prob)
 
+        # output of context query attention is [c, a, c.a, c.b], which is 4*d_model
+        # before feeding into the encoder layers, we need to reduce the size
+
+        self.cq_resizer = layers_qanet.DepthwiseSeparableConv(4*self.d_model, self.d_model, kernel_size=5)
+        
         self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(d_model=self.d_model,
                                                                 num_filters=self.num_conv_filters,
                                                                 kernel_size=5,
@@ -251,7 +256,7 @@ class QANet(nn.Module):
                        c_mask, q_mask)    # (batch_size, c_len, 4 * d_model)
 
         # assert(att.shape == (batch_size, c_len, 8 * self.d_model))
-        m0 = att
+        m0 = self.cq_resizer(att.transpose(1,2)).transpose(1, 2)
 
         for i, enc in enumerate(self.model_encoders):
             m0 = enc(m0)
