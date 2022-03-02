@@ -50,13 +50,13 @@ class Encoder(nn.Module):
     def __init__(self, d_model, num_filters, kernel_size, num_conv_layers, num_heads, drop_prob=0.2):
         super(Encoder, self).__init__()
 
+        self.num_filters = num_filters
         self.positional_encoder = PositionalEncoder(d_model)
 
         #depthwise separable conv
         self.conv_layers = nn.ModuleList([])
         self.conv_layer_norms = nn.ModuleList([])
 
-        # num_filters and d_model variables should be same = 128. Maybe we can collapse them into 1
         for i in range(num_conv_layers):
             if i==0:
                 self.conv_layer_norms.append(nn.LayerNorm(d_model))
@@ -84,11 +84,11 @@ class Encoder(nn.Module):
     def forward(self, x):
         #TODO: implement residual block
 
-        print('Input to encoder shape is', x.shape)
+        # print('Input to encoder shape is', x.shape)
         (batch_size, seq_len, d_model) = x.shape
 
         out = self.positional_encoder(x)
-        print('Positional Encoding shape is', out.shape)
+        # print('Positional Encoding shape is', out.shape)
         assert (out.size() == (batch_size, seq_len, d_model))
 
         out = out.add(x)
@@ -99,7 +99,8 @@ class Encoder(nn.Module):
             out = conv_layer(out)
             out = torch.transpose(out, 1, 2)
 
-        assert (out.size() == (batch_size, seq_len, d_model))
+        # print("Output size after conv layers in encoder",out.size())
+        assert (out.size() == (batch_size, seq_len, self.num_filters))
         out = self.att_layer_norm(out)
         out = self.att(out)
         
@@ -110,7 +111,8 @@ class Encoder(nn.Module):
         out = self.fc(out)
         out = F.relu(out)
 
-        assert (out.shape == (batch_size, seq_len, d_model))
+        # print("Output size after fully connected layer",out.size())
+        assert (out.shape == (batch_size, seq_len, self.num_filters))
         ## to do : modify the encoder block to add resideual
         # reference - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L204
         return out
@@ -133,14 +135,14 @@ class SelfAttention(nn.Module):
 
         # we want to create a lower matrix so that attention is applied only to the words
         # that preceed the current word. hence creating a matrix of max_seq_len
-        max_seq_len = 400
+        max_seq_len = 500
         # causal mask to ensure that attention is only applied to the left in the input sequence
         self.register_buffer("mask", torch.tril(torch.ones(max_seq_len, max_seq_len)).view(1, 1, max_seq_len, max_seq_len))
 
     def forward(self, x, layer_past=None):
         B, seq_len, C = x.size() #64, 287, 128
 
-        print("x_size", x.size())
+        # print("x_size", x.size())
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         k = self.key(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
@@ -150,7 +152,7 @@ class SelfAttention(nn.Module):
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
         assert(att.shape == (B, self.n_head, seq_len, seq_len))
-        print("att shape", att.shape)
+        # print("att shape", att.shape)
 
         att = att.masked_fill(self.mask[:,:,:seq_len,:seq_len] == 0, -1e10) # todo: just use float('-inf') instead?
         att = F.softmax(att, dim=-1)
@@ -194,6 +196,7 @@ class PositionalEncoder(nn.Module):
     def forward(self, tensor):
 
         batch_size, x, orig_ch = tensor.shape
+        # print("positional encoding orig shape", tensor.shape)
         pos_x = torch.arange(x, device=tensor.device).type(self.frequency_factor.type())
         sin_inp_x = torch.einsum("i,j->ij", pos_x, self.frequency_factor)
         # print("sin_inp_x apply sincos", sin_inp_x.shape)
@@ -228,11 +231,6 @@ class QANetEmbedding(nn.Module):
         char_emb = self.char_embed(char_idxs)
 
         (batch_size, seq_len, _) = word_emb.shape
-        # print(word_emb.shape)
-        # print(batch_size)
-        # print(seq_len)
-        # print(self.char_embed_dim)
-        # print(char_emb.shape)
         assert(char_emb.shape == (batch_size, seq_len, self.char_embed_dim))
         
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
