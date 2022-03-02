@@ -55,20 +55,20 @@ def main(args):
                 char_vectors = char_vectors,
                 hidden_size=args.hidden_size,
                 drop_prob=args.drop_prob)
-        log.info(model)
     elif "qanet" in args.name:
         log.info('Training QANet')
         model = QANet(word_vectors=word_vectors,
                     char_vectors = char_vectors,
-                    drop_prob=args.drop_prob)
-        log.info(model)       
+                    drop_prob=args.drop_prob)  
     else:
         log.info('Performing training without using Character Embedding')
         model = BiDAF(word_vectors=word_vectors,
                 char_vectors = char_vectors,
                 hidden_size=args.hidden_size,
                 drop_prob=args.drop_prob)
-        log.info(model)          
+    
+    log.info(model)
+    log.info(f"Total trainable params: {count_parameters(model)}")          
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
@@ -236,6 +236,8 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
 
     return results, pred_dict
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 if __name__ == '__main__':
     main(get_train_args())
