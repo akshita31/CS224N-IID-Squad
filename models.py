@@ -205,6 +205,11 @@ class QANet(nn.Module):
 
         self.att = layers.BiDAFAttention(hidden_size=self.d_model, drop_prob=drop_prob)
 
+        self.att_conv = layers_qanet.DepthwiseSeparableConv(
+            in_channels = self.d_model*4, 
+            out_channels = self.d_model,
+            kernel_size=5)
+
         self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(d_model=self.d_model,
                                                                 num_filters=self.num_conv_filters,
                                                                 kernel_size=5,
@@ -225,8 +230,8 @@ class QANet(nn.Module):
         c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, self.initial_embed_dim)
         q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, self.initial_embed_dim)
 
-        print(c_emb.shape)
-        print(q_emb.shape)
+        # print("context embedding shape", c_emb.shape)
+        # print("query embedding shape", q_emb.shape)
 
         # For passing through the convolutional layer to reduce the dimensions we will transpose
         c_emb = torch.transpose(c_emb, 1, 2) # (batch_size, self.initial_embed_dim, c_len)
@@ -241,8 +246,9 @@ class QANet(nn.Module):
         c_enc = self.embedding_encoder_context(c_emb)
         q_enc = self.embedding_encoder_question(q_emb)
 
-        print(c_enc.shape)
-        print(q_enc.shape)
+        # print("context encoding shape", c_enc.shape)
+        # print("query encoding shape",q_enc.shape)
+
         # assert(c_enc.shape == (batch_size, c_len, self.hidden_size))
         # assert(q_enc.shape == (batch_size, q_len, self.hidden_size))
 
@@ -250,9 +256,12 @@ class QANet(nn.Module):
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)    # (batch_size, c_len, 4 * d_model)
 
+        # print("context-query attention shape", att.shape)
         # assert(att.shape == (batch_size, c_len, 8 * self.d_model))
-        m0 = att
-
+        m0 = torch.transpose(att, 1, 2)
+        m0 = self.att_conv(m0)
+        m0 = torch.transpose(m0,2,1)
+        
         for i, enc in enumerate(self.model_encoders):
             m0 = enc(m0)
         m1 = m0
