@@ -135,7 +135,7 @@ class SelfAttention(nn.Module):
 
         # we want to create a lower matrix so that attention is applied only to the words
         # that preceed the current word. hence creating a matrix of max_seq_len
-        max_seq_len = 1000
+        max_seq_len = 500
         # causal mask to ensure that attention is only applied to the left in the input sequence
         self.register_buffer("mask", torch.tril(torch.ones(max_seq_len, max_seq_len)).view(1, 1, max_seq_len, max_seq_len))
 
