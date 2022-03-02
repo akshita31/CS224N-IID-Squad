@@ -3,6 +3,7 @@ from layers_char_embed import _CharEmbedding
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 from util import masked_softmax
 
@@ -16,21 +17,21 @@ class QANetOutput(nn.Module):
         hidden_size (int): Hidden size used in the BiDAF model.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, hidden_size, drop_prob):
+    def __init__(self, d_model, drop_prob):
         super(QANetOutput, self).__init__()
-        self.start_linear = nn.Linear(2*hidden_size, 1, bias = False)
-        self.end_linear = nn.Linear(2*hidden_size,1 , bias = False)
+        self.start_linear = nn.Linear(2*d_model, 1, bias = False)
+        self.end_linear = nn.Linear(2*d_model,1 , bias = False)
 
     def forward(self, m0, m1, m2, mask):
         
-        (batch_size, seq_len, hidden_size) = m0.shape
+        (batch_size, seq_len, d_model) = m0.shape
 
         # (batch_size, seq_len, hidden_size)
         start_enc = torch.cat((m0, m1), dim =2)
         end_enc = torch.cat((m0, m2), dim = 2)
 
-        assert(start_enc.shape == (batch_size, seq_len, 2*hidden_size))
-        assert(end_enc.shape == (batch_size, seq_len, 2*hidden_size))
+        assert(start_enc.shape == (batch_size, seq_len, 2*d_model))
+        assert(end_enc.shape == (batch_size, seq_len, 2*d_model))
 
         # Shapes: (batch_size, seq_len, 1)
         logits_1 = self.start_linear(start_enc)
@@ -46,21 +47,23 @@ class QANetOutput(nn.Module):
         return log_p1, log_p2
 
 class Encoder(nn.Module):
-    def __init__(self, input_size=500, num_filters=128, kernel_size=7, num_conv_layers=4, num_heads=8, drop_prob=0.1):
+    def __init__(self, d_model, num_filters, kernel_size, num_conv_layers, num_heads, drop_prob=0.2):
         super(Encoder, self).__init__()
 
-        self.positional_encoder = PositionalEncoder(input_size)
-        
+        self.positional_encoder = PositionalEncoder(d_model)
+
         #depthwise separable conv
         self.conv_layers = nn.ModuleList([])
         self.conv_layer_norms = nn.ModuleList([])
+
+        # num_filters and d_model variables should be same = 128. Maybe we can collapse them into 1
         for i in range(num_conv_layers):
             if i==0:
-                self.conv_layer_norms.append(nn.LayerNorm(input_size))
-            else:
+                self.conv_layer_norms.append(nn.LayerNorm(d_model))
+                self.conv_layers.append(DepthwiseSeparableConv(d_model, num_filters, kernel_size))
+            else: # to do : check if this is needed
                 self.conv_layer_norms.append(nn.LayerNorm(num_filters))
-
-            self.conv_layers.append(DepthwiseSeparableConv(input_size, num_filters, kernel_size))
+                self.conv_layers.append(DepthwiseSeparableConv(num_filters, num_filters, kernel_size))
 
         #self attention
         self.att_layer_norm = nn.LayerNorm(num_filters)
@@ -69,73 +72,107 @@ class Encoder(nn.Module):
         #feed-forward-layers
         self.ffn_layer_norm = nn.LayerNorm(num_filters)
 
-        self.ffn_1 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
-        nn.init.xavier_uniform_(self.ffn_1)
+        # self.ffn_1 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
+        # nn.init.xavier_uniform_(self.ffn_1.weight)
 
-        self.ffn_2 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
-        nn.init.xavier_uniform_(self.ffn_2)
+        # self.ffn_2 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
+        # nn.init.xavier_uniform_(self.ffn_2.weight)
+
+        self.fc = nn.Linear(num_filters, num_filters, bias = True)
 
 
     def forward(self, x):
         #TODO: implement residual block
-        out = self.positional_encoder.forward(x)
+
+        print('Input to encoder shape is', x.shape)
+        (batch_size, seq_len, d_model) = x.shape
+
+        out = self.positional_encoder(x)
+        print('Positional Encoding shape is', out.shape)
+        assert (out.size() == (batch_size, seq_len, d_model))
+
+        out = out.add(x)
+
         for i, conv_layer in enumerate(self.conv_layers):
             out = self.conv_layer_norms[i](out)
+            out = torch.transpose(out, 1, 2)
             out = conv_layer(out)
+            out = torch.transpose(out, 1, 2)
 
+        assert (out.size() == (batch_size, seq_len, d_model))
         out = self.att_layer_norm(out)
         out = self.att(out)
         
         out = self.ffn_layer_norm(out)
-        out = self.ffn_1(out)
-        out = self.ffn_2(out)
+        # out = self.ffn_1(out)
+        # out = self.ffn_2(out)
 
+        out = self.fc(out)
+        out = F.relu(out)
+
+        assert (out.shape == (batch_size, seq_len, d_model))
+        ## to do : modify the encoder block to add resideual
+        # reference - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L204
         return out
 
 class SelfAttention(nn.Module):
-    def __init__(self, n_embed=128, n_head=8):
+    def __init__(self, n_embed=128, n_head=8, attn_pdrop=0.1, resid_pdrop=0.1):
         super(SelfAttention, self).__init__()
         self.n_head = n_head
         self.n_embed = n_embed
-        assert self.n_embd % self.n_head == 0
+        assert self.n_embed % self.n_head == 0
         # key, query, value projections for all heads
         self.key = nn.Linear(self.n_embed, self.n_embed)
         self.query = nn.Linear(self.n_embed, self.n_embed)
         self.value = nn.Linear(self.n_embed, self.n_embed)
         # regularization
-        self.attn_drop = nn.Dropout(config.attn_pdrop)
-        self.resid_drop = nn.Dropout(config.resid_pdrop)
+        self.attn_drop = nn.Dropout(attn_pdrop)
+        self.resid_drop = nn.Dropout(resid_pdrop)
         # output projection
         self.proj = nn.Linear(self.n_embed, self.n_embed)
+
+        # we want to create a lower matrix so that attention is applied only to the words
+        # that preceed the current word. hence creating a matrix of max_seq_len
+        max_seq_len = 400
         # causal mask to ensure that attention is only applied to the left in the input sequence
-        self.register_buffer("mask", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
-        self.n_head = config.n_head
+        self.register_buffer("mask", torch.tril(torch.ones(max_seq_len, max_seq_len)).view(1, 1, max_seq_len, max_seq_len))
 
     def forward(self, x, layer_past=None):
-        B, T, C = x.size()
+        B, seq_len, C = x.size() #64, 287, 128
+
+        print("x_size", x.size())
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        k = self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        q = self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        v = self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        k = self.key(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        q = self.query(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        v = self.value(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        att = att.masked_fill(self.mask[:,:,:T,:T] == 0, -1e10) # todo: just use float('-inf') instead?
+        assert(att.shape == (B, self.n_head, seq_len, seq_len))
+        print("att shape", att.shape)
+
+        att = att.masked_fill(self.mask[:,:,:seq_len,:seq_len] == 0, -1e10) # todo: just use float('-inf') instead?
         att = F.softmax(att, dim=-1)
+
+        #att = masked_softmax(att, mask = mask, dim = -1)
         att = self.attn_drop(att)
         y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+        y = y.transpose(1, 2).contiguous().view(B, seq_len, C) # re-assemble all head outputs side by side
 
         # output projection
         y = self.resid_drop(self.proj(y))
+
+        assert (y.shape == (B, seq_len, self.n_embed))
         return y
 
 class DepthwiseSeparableConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size):
+    def __init__(self, in_channels, out_channels, kernel_size=7):
+
+        # Can refernce this from - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L39
         super(DepthwiseSeparableConv, self).__init__()
-        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size, groups=in_channels)
-        self.pointwiseConv = nn.Conv1d(in_channels, out_channels, kernel_size=1)
+        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size, padding = kernel_size//2)
+        self.pointwiseConv = nn.Conv1d(in_channels, out_channels, kernel_size=1, padding = 0)
 
     def forward(self, x):
         out = self.depthwiseConv(x)
@@ -145,7 +182,7 @@ class DepthwiseSeparableConv(nn.Module):
 class PositionalEncoder(nn.Module):
     #Reference: https://github.com/tatp22/multidim-positional-encoding/blob/master/positional_encodings/positional_encodings.py
     def __init__(self, in_channels):
-        super.(PositionalEncoding, self).__init__()
+        super(PositionalEncoder, self).__init__()
 
         if in_channels%2 == 0:
             self.channels = in_channels
@@ -154,49 +191,57 @@ class PositionalEncoder(nn.Module):
 
         self.frequency_factor = 1.0 / (10000 ** (torch.arange(0, self.channels, 2).float() / self.channels))
 
-    def forward(self, x):
-        pos_x = torch.arange(x)
-        frequency_x = torch.einsum("i,j->ij", pos_x, self.frequency_factor)
-        emb_x = torch.cat((frequency_x.sin(), frequency_x.cos()), dim=-1)
+    def forward(self, tensor):
 
-        emb = torch.zeros((x, self.channels))
+        batch_size, x, orig_ch = tensor.shape
+        pos_x = torch.arange(x, device=tensor.device).type(self.frequency_factor.type())
+        sin_inp_x = torch.einsum("i,j->ij", pos_x, self.frequency_factor)
+        # print("sin_inp_x apply sincos", sin_inp_x.shape)
+        emb_x = torch.cat((sin_inp_x.sin(), sin_inp_x.cos()), dim=-1)
+        #print("embx apply sincos", emb_x.shape)
+        emb = torch.zeros((x, self.channels), device=tensor.device).type(tensor.type())
+        #print("emb zeros", emb.shape)
         emb[:, : self.channels] = emb_x
-        
-        return emb[None, :, :x.shape]
+        #print("output", emb[None, :, :orig_ch].repeat(batch_size, 1, 1).shape)
+        return emb[None, :, :orig_ch].repeat(batch_size, 1, 1)
       
 class QANetEmbedding(nn.Module):
     """Combines the Word and Character embedding and then applies a transformation and highway network.
     Output of this layer will be (batch_size, seq_len, hidden_size)
     """
 
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, num_filters):
+    def __init__(self, word_vectors, char_vectors, drop_prob, num_filters):
         super(QANetEmbedding, self).__init__()
         self.drop_prob = drop_prob
-        self.num_filters = num_filters
         self.word_embed_size = word_vectors.size(1)
-        self.hidden_size = hidden_size
+        self.batch_size = word_vectors.size(0)
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
-        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = self.num_filters)
+        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = num_filters)
+        self.char_embed_dim = self.char_embed.GetCharEmbedDim()
 
-        self.hwy = HighwayEncoder(2, self.num_filters + self.word_embed_size)
+        self.hwy = HighwayEncoder(2, self.char_embed_dim + self.word_embed_size)
+        #self.hwy = HighwayEncoder(2, (self.batch_size, self.word_embed_size, self.num_filters + self.word_embed_size))
 
     def forward(self, word_idxs, char_idxs):
         word_emb = self.word_embed(word_idxs)
         char_emb = self.char_embed(char_idxs)
 
         (batch_size, seq_len, _) = word_emb.shape
-        assert(char_emb.shape == (batch_size, seq_len, self.num_filters))
+        # print(word_emb.shape)
+        # print(batch_size)
+        # print(seq_len)
+        # print(self.char_embed_dim)
+        # print(char_emb.shape)
+        assert(char_emb.shape == (batch_size, seq_len, self.char_embed_dim))
         
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
-        #word_projection = self.word_proj(word_emb)
         
-        #concatenate to produce the final embedding
         emb = torch.cat((word_emb, char_emb), dim = 2)
-        #emb = self.proj(emb)
-        #assert(emb.shape == (batch_size, seq_len, self.hidden_size))
+        emb = self.hwy(emb)
 
-        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
-
-        assert(emb.shape == (batch_size, seq_len, self.word_embed_size + self.num_filters))
+        assert(emb.shape == (batch_size, seq_len, self.GetOutputEmbeddingDim()))
         return emb
+    
+    def GetOutputEmbeddingDim(self):
+        return self.word_embed_size + self.char_embed_dim

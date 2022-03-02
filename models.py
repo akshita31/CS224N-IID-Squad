@@ -164,77 +164,111 @@ class QANet(nn.Module):
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
+    def __init__(self, word_vectors, char_vectors, drop_prob=0.):
         super(QANet, self).__init__()
-        
-        self.num_filters = 100
-
-        # Since we are using 2 conv nets and concatenating the output of the two, char embed size if self.num_filters*2
-        self.char_embed_size = self.num_filters * 2
-        
-        self.word_embed_size = word_vectors.size(1)
-        self.hidden_size = hidden_size
+        # self.word_embed_size = word_vectors.size(1)
 
         self.emb = layers_qanet.QANetEmbedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
-                                    hidden_size=hidden_size,
                                     drop_prob=drop_prob,
-                                    num_filters=self.num_filters)
+                                    num_filters=100)
 
-        self.embedding_encoder_context =  None
-        self.embedding_encoder_question = None
-        # self.enc = layers.RNNEncoder(input_size=hidden_size,
-        #                              hidden_size=hidden_size,
-        #                              num_layers=1,
-        #                              drop_prob=drop_prob)
+        self.initial_embed_dim = self.emb.GetOutputEmbeddingDim()
+        self.d_model = 128 # d model is the dimensionality of each word before and after it goes into the encoder layer, i
+        self.num_conv_filters = 128
 
-        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
-                                         drop_prob=drop_prob)
+        # These two layers will reduce the dimensionality of the embedding of each word from (500) to (128)
+        self.context_conv = layers_qanet.DepthwiseSeparableConv(
+            in_channels = self.initial_embed_dim, 
+            out_channels= self.d_model,
+            kernel_size=5)
+        
+        self.question_conv = layers_qanet.DepthwiseSeparableConv(
+            in_channels = self.initial_embed_dim, 
+            out_channels = self.d_model,
+            kernel_size=5)
 
-        # self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
-        #                              hidden_size=hidden_size,
-        #                              num_layers=2,
-        #                              drop_prob=drop_prob)
+        # Output of the Convolutions above will be fed into the encoder
+        self.embedding_encoder_context =  layers_qanet.Encoder(d_model=self.d_model,
+                                                                num_filters=self.num_conv_filters, 
+                                                                kernel_size=7, 
+                                                                num_conv_layers=4, 
+                                                                num_heads=8, 
+                                                                drop_prob=drop_prob)
 
-        self.encoder_block0 = None
-        self.encoder_block1 = None
-        self.encoder_block2 = None
+        self.embedding_encoder_question =  layers_qanet.Encoder(d_model=self.d_model,
+                                                                num_filters=self.num_conv_filters, 
+                                                                kernel_size=7, 
+                                                                num_conv_layers=4, 
+                                                                num_heads=8, 
+                                                                drop_prob=drop_prob)
 
-        self.out = layers_qanet.QANetOutput(hidden_size=hidden_size,
-                                      drop_prob=drop_prob)
+        self.att = layers.BiDAFAttention(hidden_size=self.d_model, drop_prob=drop_prob)
+
+        self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(d_model=self.d_model,
+                                                                num_filters=self.num_conv_filters,
+                                                                kernel_size=5,
+                                                                num_conv_layers=2,
+                                                                num_heads=8,
+                                                                drop_prob=drop_prob) for _ in range(7)])
+        
+
+        self.out = layers_qanet.QANetOutput(d_model=self.d_model, drop_prob=drop_prob)
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
-        batch_size = cw_idxs.shape(0)
+        batch_size = cw_idxs.shape[0]
 
         # In QANet the projection is not applied and output of highway network is same size as the word+char embedding dim
-        c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, hidden_size)
-        q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, hidden_size)
+        c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, self.initial_embed_dim)
+        q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, self.initial_embed_dim)
 
-        assert(c_emb.shape == (batch_size, c_len, self.word_embed_size + self.char_embed_size))
-        assert(q_emb.shape == (batch_size, q_len, self.word_embed_size + self.char_embed_size))
+        print(c_emb.shape)
+        print(q_emb.shape)
 
-        # Input of this encoder layer is (word_embed_size + char_embed_size and output is the hidden_size)
+        # For passing through the convolutional layer to reduce the dimensions we will transpose
+        c_emb = torch.transpose(c_emb, 1, 2) # (batch_size, self.initial_embed_dim, c_len)
+        q_emb = torch.transpose(q_emb, 1, 2) # (batch_size, self.initial_embed_dim, q_len)
+
+        c_emb = self.context_conv(c_emb) # (batch_size, self.num_conv_filters, c_len)
+        q_emb = self.question_conv(q_emb) # (batch_size, self.num_conv_filters, q_len)
+
+        c_emb = torch.transpose(c_emb, 1, 2) # (batch_size, c_len, self.d_model)
+        q_emb = torch.transpose(q_emb, 1, 2) # (batch_size, q_len, self.d_model)
+        
         c_enc = self.embedding_encoder_context(c_emb)
         q_enc = self.embedding_encoder_question(q_emb)
-        # c_enc = self.enc(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)
-        # q_enc = self.enc(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
 
-        assert(c_enc.shape == (batch_size, c_len, self.hidden_size))
-        assert(q_enc.shape == (batch_size, q_len, self.hidden_size))
+        print(c_enc.shape)
+        print(q_enc.shape)
+        # assert(c_enc.shape == (batch_size, c_len, self.hidden_size))
+        # assert(q_enc.shape == (batch_size, q_len, self.hidden_size))
 
         # compute attention same as BiDAF
         att = self.att(c_enc, q_enc,
-                       c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
+                       c_mask, q_mask)    # (batch_size, c_len, 4 * d_model)
 
-        assert(att.shape == (batch_size, c_len, 8 * self.hidden_size))
+        # assert(att.shape == (batch_size, c_len, 8 * self.d_model))
+        m0 = att
 
-        m0 = self.encoder_block0(att)
-        m1 = self.encoder_block1(m0)
-        m2 = self.encoder_block2(m1)
+        for i, enc in enumerate(self.model_encoders):
+            m0 = enc(m0)
+        m1 = m0
 
-        out = self.out(m0, m1, m2, c_mask)
+        for i, enc in enumerate(self.model_encoders):
+            m0 = enc(m0)
+        m2 = m0
+
+        for i, enc in enumerate(self.model_encoders):
+            m0 = enc(m0)
+        m3 = m0
+
+        out = self.out(m1, m2, m3, c_mask)
 
         return out
+
+class QANetConfig:
+    def __init__(self) -> None:
+        pass

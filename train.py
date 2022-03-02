@@ -17,7 +17,7 @@ import util
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF, BiDAFWithChar
+from models import BiDAF, BiDAFWithChar, QANet
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
@@ -56,6 +56,12 @@ def main(args):
                 hidden_size=args.hidden_size,
                 drop_prob=args.drop_prob)
         log.info(model)
+    elif "qanet" in args.name:
+        log.info('Training QANet')
+        model = QANet(word_vectors=word_vectors,
+                    char_vectors = char_vectors,
+                    drop_prob=args.drop_prob)
+        log.info(model)       
     else:
         log.info('Performing training without using Character Embedding')
         model = BiDAF(word_vectors=word_vectors,
