@@ -169,7 +169,7 @@ class DepthwiseSeparableConv(nn.Module):
 
         # Can refernce this from - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L39
         super(DepthwiseSeparableConv, self).__init__()
-        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size, padding = kernel_size//2)
+        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size, padding = kernel_size//2, groups = in_channels)
         self.pointwiseConv = nn.Conv1d(in_channels, out_channels, kernel_size=1, padding = 0)
 
     def forward(self, x):

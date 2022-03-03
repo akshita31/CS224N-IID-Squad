@@ -233,16 +233,9 @@ class QANet(nn.Module):
         # print("context embedding shape", c_emb.shape)
         # print("query embedding shape", q_emb.shape)
 
-        # For passing through the convolutional layer to reduce the dimensions we will transpose
-        c_emb = torch.transpose(c_emb, 1, 2) # (batch_size, self.initial_embed_dim, c_len)
-        q_emb = torch.transpose(q_emb, 1, 2) # (batch_size, self.initial_embed_dim, q_len)
+        c_emb = self.context_conv(c_emb.transpose(1,2)).transpose(1,2) # (batch_size, self.num_conv_filters, c_len)
+        q_emb = self.question_conv(q_emb.transpose(1,2)).transpose(1,2) # (batch_size, self.num_conv_filters, q_len)
 
-        c_emb = self.context_conv(c_emb) # (batch_size, self.num_conv_filters, c_len)
-        q_emb = self.question_conv(q_emb) # (batch_size, self.num_conv_filters, q_len)
-
-        c_emb = torch.transpose(c_emb, 1, 2) # (batch_size, c_len, self.d_model)
-        q_emb = torch.transpose(q_emb, 1, 2) # (batch_size, q_len, self.d_model)
-        
         c_enc = self.embedding_encoder_context(c_emb)
         q_enc = self.embedding_encoder_question(q_emb)
 
@@ -258,9 +251,7 @@ class QANet(nn.Module):
 
         # print("context-query attention shape", att.shape)
         # assert(att.shape == (batch_size, c_len, 8 * self.d_model))
-        m0 = torch.transpose(att, 1, 2)
-        m0 = self.att_conv(m0)
-        m0 = torch.transpose(m0,2,1)
+        m0 = self.att_conv(att.transpose(1,2)).transpose(1,2)
         
         for i, enc in enumerate(self.model_encoders):
             m0 = enc(m0)
