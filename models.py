@@ -215,7 +215,7 @@ class QANet(nn.Module):
                                                                 kernel_size=5,
                                                                 num_conv_layers=2,
                                                                 num_heads=8,
-                                                                drop_prob=drop_prob) for _ in range(7)])
+                                                                drop_prob=drop_prob) for _ in range(5)])
         
 
         self.out = layers_qanet.QANetOutput(d_model=self.d_model, drop_prob=drop_prob)

@@ -58,12 +58,8 @@ class Encoder(nn.Module):
         self.conv_layer_norms = nn.ModuleList([])
 
         for i in range(num_conv_layers):
-            if i==0:
-                self.conv_layer_norms.append(nn.LayerNorm(d_model))
-                self.conv_layers.append(DepthwiseSeparableConv(d_model, num_filters, kernel_size))
-            else: # to do : check if this is needed
-                self.conv_layer_norms.append(nn.LayerNorm(num_filters))
-                self.conv_layers.append(DepthwiseSeparableConv(num_filters, num_filters, kernel_size))
+            self.conv_layer_norms.append(nn.LayerNorm(d_model))
+            self.conv_layers.append(DepthwiseSeparableConv(d_model, num_filters, kernel_size))
 
         #self attention
         self.att_layer_norm = nn.LayerNorm(num_filters)
