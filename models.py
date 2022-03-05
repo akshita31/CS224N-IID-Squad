@@ -167,26 +167,27 @@ class QANet(nn.Module):
     def __init__(self, word_vectors, char_vectors, drop_prob=0.):
         super(QANet, self).__init__()
         # self.word_embed_size = word_vectors.size(1)
+        self.d_model = 128 # d model is the dimensionality of each word before and after it goes into the encoder layer, i
+        self.num_conv_filters = 128
 
         self.emb = layers_qanet.QANetEmbedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
                                     drop_prob=drop_prob,
-                                    num_filters=100)
+                                    d_model= self.d_model)
 
-        self.initial_embed_dim = self.emb.GetOutputEmbeddingDim()
-        self.d_model = 128 # d model is the dimensionality of each word before and after it goes into the encoder layer, i
-        self.num_conv_filters = 128
+        # self.initial_embed_dim = self.emb.GetOutputEmbeddingDim()
+        
 
         # These two layers will reduce the dimensionality of the embedding of each word from (500) to (128)
-        self.context_conv = layers_qanet.DepthwiseSeparableConv(
-            in_channels = self.initial_embed_dim, 
-            out_channels= self.d_model,
-            kernel_size=5)
+        # self.context_conv = layers_qanet.DepthwiseSeparableConv(
+        #     in_channels = self.initial_embed_dim, 
+        #     out_channels= self.d_model,
+        #     kernel_size=5)
         
-        self.question_conv = layers_qanet.DepthwiseSeparableConv(
-            in_channels = self.initial_embed_dim, 
-            out_channels = self.d_model,
-            kernel_size=5)
+        # self.question_conv = layers_qanet.DepthwiseSeparableConv(
+        #     in_channels = self.initial_embed_dim, 
+        #     out_channels = self.d_model,
+        #     kernel_size=5)
 
         # Output of the Convolutions above will be fed into the encoder
         self.embedding_encoder_context =  layers_qanet.Encoder(d_model=self.d_model,
@@ -233,8 +234,8 @@ class QANet(nn.Module):
         # print("context embedding shape", c_emb.shape)
         # print("query embedding shape", q_emb.shape)
 
-        c_emb = self.context_conv(c_emb.transpose(1,2)).transpose(1,2) # (batch_size, self.num_conv_filters, c_len)
-        q_emb = self.question_conv(q_emb.transpose(1,2)).transpose(1,2) # (batch_size, self.num_conv_filters, q_len)
+        #c_emb = self.context_conv(c_emb.transpose(1,2)).transpose(1,2) # (batch_size, self.num_conv_filters, c_len)
+        #q_emb = self.question_conv(q_emb.transpose(1,2)).transpose(1,2) # (batch_size, self.num_conv_filters, q_len)
 
         c_enc = self.embedding_encoder_context(c_emb)
         q_enc = self.embedding_encoder_question(q_emb)

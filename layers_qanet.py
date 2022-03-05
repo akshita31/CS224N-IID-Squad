@@ -7,6 +7,28 @@ import math
 
 from util import masked_softmax
 
+class Initialized_Conv1d(nn.Module):
+    def __init__(self, in_channels, out_channels,
+                 kernel_size=1, stride=1, padding=0, groups=1,
+                 relu=False, bias=False):
+        super().__init__()
+        self.out = nn.Conv1d(
+            in_channels, out_channels,
+            kernel_size, stride=stride,
+            padding=padding, groups=groups, bias=bias)
+        if relu is True:
+            self.relu = True
+            nn.init.kaiming_normal_(self.out.weight, nonlinearity='relu')
+        else:
+            self.relu = False
+            nn.init.xavier_uniform_(self.out.weight)
+
+    def forward(self, x):
+        if self.relu is True:
+            return F.relu(self.out(x))
+        else:
+            return self.out(x)
+
 class QANetOutput(nn.Module):
     """Output layer used by QANet for question answering.
 
@@ -51,7 +73,7 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         self.num_filters = num_filters
-        self.positional_encoder = PositionalEncoder(d_model)
+        #self.positional_encoder = PositionalEncoder(d_model)
         self.drop_prob = drop_prob
         self.num_conv_layers = num_conv_layers
 
@@ -65,18 +87,19 @@ class Encoder(nn.Module):
 
         #feed-forward-layers
         self.ffn_layer_norm = nn.LayerNorm(num_filters)
-        self.fc = nn.Linear(num_filters, num_filters, bias = True)
+        self.fc = Initialized_Conv1d(d_model, d_model, relu=True, bias=True)
+        # self.fc = nn.Linear(num_filters, num_filters, bias = True)
 
 
     def forward(self, x):
         # print('Input to encoder shape is', x.shape)
         (batch_size, seq_len, d_model) = x.shape
 
+        #print("Input embedding is", x[0][5][:10])
         # out = self.positional_encoder(x)
-        out = x
+        out = PosEncoder(x)
         # print('Positional Encoding shape is', out.shape)
         assert (out.size() == (batch_size, seq_len, d_model))
-        #print("Input embedding is", x[0][5][:10])
         #print("Positional embedding is", out[0][5][:10])
 
         #out = out.add(x)
@@ -105,7 +128,7 @@ class Encoder(nn.Module):
         res = out
 
         out = self.ffn_layer_norm(out)
-        out = self.fc(out)
+        out = self.fc(out.transpose(1,2)).transpose(1,2)
         out = F.relu(out)
         out = out + res
         out = F.dropout(out, p=self.drop_prob, training=self.training)
@@ -177,6 +200,28 @@ class DepthwiseSeparableConv(nn.Module):
         out = self.pointwiseConv(self.depthwiseConv(x))
         return out
 
+def PosEncoder(x, min_timescale=1.0, max_timescale=1.0e4):
+    # x = x.transpose(1, 2)
+    length = x.size()[1]
+    channels = x.size()[2]
+    signal = get_timing_signal(length, channels, min_timescale, max_timescale)
+    return (x + signal.to(x.get_device()))
+
+
+def get_timing_signal(length, channels,
+                      min_timescale=1.0, max_timescale=1.0e4):
+    position = torch.arange(length).type(torch.float32)
+    num_timescales = channels // 2
+    log_timescale_increment = (math.log(float(max_timescale) / float(min_timescale)) / (float(num_timescales) - 1))
+    inv_timescales = min_timescale * torch.exp(
+            torch.arange(num_timescales).type(torch.float32) * -log_timescale_increment)
+    scaled_time = position.unsqueeze(1) * inv_timescales.unsqueeze(0)
+    signal = torch.cat([torch.sin(scaled_time), torch.cos(scaled_time)], dim = 1)
+    m = nn.ZeroPad2d((0, (channels % 2), 0, 0))
+    signal = m(signal)
+    signal = signal.view(1, length, channels)
+    return signal
+
 class PositionalEncoder(nn.Module):
     #Reference: https://github.com/tatp22/multidim-positional-encoding/blob/master/positional_encodings/positional_encodings.py
     def __init__(self, in_channels):
@@ -209,17 +254,18 @@ class QANetEmbedding(nn.Module):
     Output of this layer will be (batch_size, seq_len, hidden_size)
     """
 
-    def __init__(self, word_vectors, char_vectors, drop_prob, num_filters):
+    def __init__(self, word_vectors, char_vectors, drop_prob, d_model):
         super(QANetEmbedding, self).__init__()
         self.drop_prob = drop_prob
         self.word_embed_size = word_vectors.size(1)
         self.batch_size = word_vectors.size(0)
+        self.d_model = d_model
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
-        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = num_filters)
+        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = 100)
         self.char_embed_dim = self.char_embed.GetCharEmbedDim()
-
-        self.hwy = HighwayEncoder(2, self.char_embed_dim + self.word_embed_size)
+        self.conv1d = Initialized_Conv1d(self.word_embed_size + self.char_embed_dim, self.d_model, bias=False)
+        self.hwy = HighwayEncoder(2, self.d_model)
 
     def forward(self, word_idxs, char_idxs):
         word_emb = self.word_embed(word_idxs)
@@ -231,10 +277,11 @@ class QANetEmbedding(nn.Module):
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
         
         emb = torch.cat((word_emb, char_emb), dim = 2)
+        emb = self.conv1d(emb.transpose(1,2)).transpose(1,2)
         emb = self.hwy(emb)
 
         assert(emb.shape == (batch_size, seq_len, self.GetOutputEmbeddingDim()))
         return emb
     
     def GetOutputEmbeddingDim(self):
-        return self.word_embed_size + self.char_embed_dim
+        return self.d_model

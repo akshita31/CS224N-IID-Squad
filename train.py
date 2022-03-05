@@ -92,8 +92,8 @@ def main(args):
     optimizer = optim.Adadelta(model.parameters(), args.lr,
                                weight_decay=args.l2_wd)
     lambda1 = lambda epoch: args.lr ** (epoch//lr_step) # decreasing learning rate
-    lambda2 = lambda epoch: args.lr # constant learning rate
-    scheduler = sched.LambdaLR(optimizer, lambda1)  # Constant LR
+    lambda2 = lambda epoch: 1. # constant learning rate
+    scheduler = sched.LambdaLR(optimizer, lambda2)  # Constant LR
 
     # Get data loader
     log.info('Building dataset...')
