@@ -52,6 +52,8 @@ class Encoder(nn.Module):
 
         self.num_filters = num_filters
         self.positional_encoder = PositionalEncoder(d_model)
+        self.drop_prob = drop_prob
+        self.num_conv_layers = num_conv_layers
 
         #depthwise separable conv
         self.conv_layers = nn.ModuleList([])
@@ -67,19 +69,10 @@ class Encoder(nn.Module):
 
         #feed-forward-layers
         self.ffn_layer_norm = nn.LayerNorm(num_filters)
-
-        # self.ffn_1 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
-        # nn.init.xavier_uniform_(self.ffn_1.weight)
-
-        # self.ffn_2 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
-        # nn.init.xavier_uniform_(self.ffn_2.weight)
-
         self.fc = nn.Linear(num_filters, num_filters, bias = True)
 
 
     def forward(self, x):
-        #TODO: implement residual block
-
         # print('Input to encoder shape is', x.shape)
         (batch_size, seq_len, d_model) = x.shape
 
@@ -90,27 +83,36 @@ class Encoder(nn.Module):
         out = out.add(x)
 
         for i, conv_layer in enumerate(self.conv_layers):
+            res = out
             out = self.conv_layer_norms[i](out)
             out = torch.transpose(out, 1, 2)
             out = conv_layer(out)
             out = torch.transpose(out, 1, 2)
+            out = F.relu(out)
+            out = out + res
+            if (i + 1) % 2 == 0:
+                p_drop = self.drop_prob * (i + 1) / self.num_conv_layers
+                out = F.dropout(out, p=p_drop, training=self.training)
+
+        res = out
 
         # print("Output size after conv layers in encoder",out.size())
         assert (out.size() == (batch_size, seq_len, self.num_filters))
+        
         out = self.att_layer_norm(out)
         out = self.att(out)
-        
-        out = self.ffn_layer_norm(out)
-        # out = self.ffn_1(out)
-        # out = self.ffn_2(out)
+        out = out + res
+        out = F.dropout(out, p=self.drop_prob, training=self.training)
+        res = out
 
+        out = self.ffn_layer_norm(out)
         out = self.fc(out)
         out = F.relu(out)
+        out = out + res
+        out = F.dropout(out, p=self.drop_prob, training=self.training)
 
         # print("Output size after fully connected layer",out.size())
         assert (out.shape == (batch_size, seq_len, self.num_filters))
-        ## to do : modify the encoder block to add resideual
-        # reference - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L204
         return out
 
 class SelfAttention(nn.Module):
@@ -220,7 +222,6 @@ class QANetEmbedding(nn.Module):
         self.char_embed_dim = self.char_embed.GetCharEmbedDim()
 
         self.hwy = HighwayEncoder(2, self.char_embed_dim + self.word_embed_size)
-        #self.hwy = HighwayEncoder(2, (self.batch_size, self.word_embed_size, self.num_filters + self.word_embed_size))
 
     def forward(self, word_idxs, char_idxs):
         word_emb = self.word_embed(word_idxs)
