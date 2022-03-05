@@ -253,7 +253,7 @@ class QANet(nn.Module):
         # assert(att.shape == (batch_size, c_len, 8 * self.d_model))
         m0 = self.att_conv(att.transpose(1,2)).transpose(1,2)
         
-        print("m0", m0[0][5][:10])
+        #print("m0", m0[0][5][:10])
         for i, enc in enumerate(self.model_encoders):
             m0 = enc(m0)
         m1 = m0

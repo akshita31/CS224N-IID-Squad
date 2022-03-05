@@ -83,11 +83,11 @@ class Encoder(nn.Module):
         out = x
         # print('Positional Encoding shape is', out.shape)
         assert (out.size() == (batch_size, seq_len, d_model))
-        print("Input embedding is", x[0][5][:10])
-        print("Positional embedding is", out[0][5][:10])
+        #print("Input embedding is", x[0][5][:10])
+        #print("Positional embedding is", out[0][5][:10])
 
-        out = out.add(x)
-        print("Out embedding is", out[0][5][:10])
+        #out = out.add(x)
+        #print("Out embedding is", out[0][5][:10])
         for i, conv_layer in enumerate(self.conv_layers):
             out = self.conv_layer_norms[i](out)
             out = torch.transpose(out, 1, 2)
@@ -111,7 +111,7 @@ class Encoder(nn.Module):
         assert (out.shape == (batch_size, seq_len, self.num_filters))
         ## to do : modify the encoder block to add resideual
         # reference - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L204
-        print("Output of encoder is", out[0][5][:10])
+        # print("Output of encoder is", out[0][5][:10])
         return out
 
 class SelfAttention(nn.Module):
