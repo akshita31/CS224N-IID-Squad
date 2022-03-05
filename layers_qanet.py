@@ -54,16 +54,12 @@ class Encoder(nn.Module):
         self.positional_encoder = PositionalEncoder(d_model)
 
         #depthwise separable conv
-        self.conv_layers = nn.ModuleList([])
-        self.conv_layer_norms = nn.ModuleList([])
-
-        for i in range(num_conv_layers):
-            self.conv_layer_norms.append(nn.LayerNorm(d_model))
-            self.conv_layers.append(DepthwiseSeparableConv(d_model, num_filters, kernel_size))
+        self.conv_layer_norms = nn.ModuleList([nn.LayerNorm(d_model) for _ in range(num_conv_layers)])
+        self.conv_layers = nn.ModuleList([DepthwiseSeparableConv(d_model, num_filters, kernel_size) for _ in range(num_conv_layers)])
 
         #self attention
-        self.att_layer_norm = nn.LayerNorm(num_filters)
-        self.att = SelfAttention(num_filters, num_heads)
+        self.att_layer_norm = nn.LayerNorm(d_model)
+        self.att = SelfAttention(d_model, num_heads)
 
         #feed-forward-layers
         self.ffn_layer_norm = nn.LayerNorm(num_filters)
@@ -74,7 +70,7 @@ class Encoder(nn.Module):
         # self.ffn_2 = nn.Conv1d(num_filters, num_filters, kernel_size=1)
         # nn.init.xavier_uniform_(self.ffn_2.weight)
 
-        self.fc = nn.Linear(num_filters, num_filters, bias = True)
+        self.fc = nn.Linear(d_model, d_model, bias = True)
 
 
     def forward(self, x):
@@ -83,17 +79,21 @@ class Encoder(nn.Module):
         # print('Input to encoder shape is', x.shape)
         (batch_size, seq_len, d_model) = x.shape
 
-        out = self.positional_encoder(x)
+        # out = self.positional_encoder(x)
+        out = x
         # print('Positional Encoding shape is', out.shape)
         assert (out.size() == (batch_size, seq_len, d_model))
+        print("Input embedding is", x[0][5][:10])
+        print("Positional embedding is", out[0][5][:10])
 
         out = out.add(x)
-
+        print("Out embedding is", out[0][5][:10])
         for i, conv_layer in enumerate(self.conv_layers):
             out = self.conv_layer_norms[i](out)
             out = torch.transpose(out, 1, 2)
             out = conv_layer(out)
             out = torch.transpose(out, 1, 2)
+            out = F.relu(out)
 
         # print("Output size after conv layers in encoder",out.size())
         assert (out.size() == (batch_size, seq_len, self.num_filters))
@@ -111,6 +111,7 @@ class Encoder(nn.Module):
         assert (out.shape == (batch_size, seq_len, self.num_filters))
         ## to do : modify the encoder block to add resideual
         # reference - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L204
+        print("Output of encoder is", out[0][5][:10])
         return out
 
 class SelfAttention(nn.Module):
@@ -165,7 +166,7 @@ class SelfAttention(nn.Module):
         return y
 
 class DepthwiseSeparableConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=7):
+    def __init__(self, in_channels, out_channels, kernel_size):
 
         # Can refernce this from - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L39
         super(DepthwiseSeparableConv, self).__init__()
@@ -173,8 +174,7 @@ class DepthwiseSeparableConv(nn.Module):
         self.pointwiseConv = nn.Conv1d(in_channels, out_channels, kernel_size=1, padding = 0)
 
     def forward(self, x):
-        out = self.depthwiseConv(x)
-        out = self.pointwiseConv(out)
+        out = self.pointwiseConv(self.depthwiseConv(x))
         return out
 
 class PositionalEncoder(nn.Module):

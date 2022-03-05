@@ -239,7 +239,7 @@ class QANet(nn.Module):
         c_enc = self.embedding_encoder_context(c_emb)
         q_enc = self.embedding_encoder_question(q_emb)
 
-        # print("context encoding shape", c_enc.shape)
+        # print("context encoding", c_enc[0][5][:10])
         # print("query encoding shape",q_enc.shape)
 
         # assert(c_enc.shape == (batch_size, c_len, self.hidden_size))
@@ -253,6 +253,7 @@ class QANet(nn.Module):
         # assert(att.shape == (batch_size, c_len, 8 * self.d_model))
         m0 = self.att_conv(att.transpose(1,2)).transpose(1,2)
         
+        print("m0", m0[0][5][:10])
         for i, enc in enumerate(self.model_encoders):
             m0 = enc(m0)
         m1 = m0
