@@ -4,6 +4,7 @@ Author:
     Chris Chute (chute@stanford.edu)
 """
 
+import math
 import numpy as np
 import random
 import torch
@@ -46,6 +47,8 @@ def main(args):
     word_vectors = util.torch_from_json(args.word_emb_file)
     char_vectors = util.torch_from_json(args.char_emb_file)
 
+    with open(args.char2idx_file, 'r') as fh:
+        char_vocab_size = len(json_load(fh))
     # Get model
     log.info('Building model...')
 
@@ -59,6 +62,7 @@ def main(args):
         log.info('Training QANet')
         model = QANet1(word_vectors=word_vectors,
                     char_vectors = char_vectors,
+                    char_vocab_size=char_vocab_size,
                     drop_prob=args.drop_prob)  
     else:
         log.info('Performing training without using Character Embedding')
@@ -88,19 +92,23 @@ def main(args):
 
     # Get optimizer and scheduler
 
-    lr_step = 15000 # change the learning rate after every 1 million steps (15000*64)
-    optimizer = optim.Adadelta(model.parameters(), args.lr,
-                               weight_decay=args.l2_wd)
-    lambda1 = lambda epoch: args.lr ** (epoch//lr_step) # decreasing learning rate
-    lambda2 = lambda epoch: 1. # constant learning rate
-    scheduler = sched.LambdaLR(optimizer, lambda2)  # Constant LR
+    # lr_step = 15000 # change the learning rate after every 1 million steps (15000*64)
+    # optimizer = optim.Adadelta(model.parameters(), args.lr,
+    #                            weight_decay=args.l2_wd)
+    # lambda1 = lambda epoch: args.lr ** (epoch//lr_step) # decreasing learning rate
+    # lambda2 = lambda epoch: 1. # constant learning rate
+    # scheduler = sched.LambdaLR(optimizer, lambda2)  # Constant LR
+
+    optimizer = optim.Adam(lr=1, betas=(0.8, 0.999), eps=1e-7, weight_decay=args.l2_wd, params=model.parameters())
+    cr = args.lr / math.log2(1000)
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda ee: cr * math.log2(ee + 1) if ee < 1000 else args.lr)
 
     # Get data loader
     log.info('Building dataset...')
     train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,
-                                   shuffle=True,
+                                   shuffle=False,
                                    num_workers=args.num_workers,
                                    collate_fn=collate_fn)
     dev_dataset = SQuAD(args.dev_record_file, args.use_squad_v2)
@@ -131,6 +139,7 @@ def main(args):
                 optimizer.zero_grad()
 
                 # Forward
+                #print('id is', ids[0:5])
                 log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
@@ -203,6 +212,7 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
             qc_idxs = qc_idxs.to(device)
             batch_size = cw_idxs.size(0)
 
+            #print('id is', ids[0:5])
             # Forward
             log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
             y1, y2 = y1.to(device), y2.to(device)

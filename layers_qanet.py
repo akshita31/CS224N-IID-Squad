@@ -240,8 +240,8 @@ class QANetEmbedding(nn.Module):
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
         self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = 100)
         self.char_embed_dim = self.char_embed.GetCharEmbedDim()
-        self.conv1d = Initialized_Conv1d(self.word_embed_size + self.char_embed_dim, self.d_model, bias=False)
-        self.hwy = HighwayEncoder(2, self.d_model)
+        # self.conv1d = Initialized_Conv1d(self.word_embed_size + self.char_embed_dim, self.d_model, bias=False)
+        self.hwy = HighwayEncoder(2, self.word_embed_size + self.char_embed_dim)
 
     def forward(self, word_idxs, char_idxs):
         word_emb = self.word_embed(word_idxs)
@@ -253,11 +253,11 @@ class QANetEmbedding(nn.Module):
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
         
         emb = torch.cat((word_emb, char_emb), dim = 2)
-        emb = self.conv1d(emb.transpose(1,2)).transpose(1,2)
+        #emb = self.conv1d(emb.transpose(1,2)).transpose(1,2)
         emb = self.hwy(emb)
 
         assert(emb.shape == (batch_size, seq_len, self.GetOutputEmbeddingDim()))
         return emb
     
     def GetOutputEmbeddingDim(self):
-        return self.d_model
+        return self.word_embed_size + self.char_embed_dim

@@ -128,12 +128,15 @@ def get_train_args():
                         help='Maximum gradient norm for gradient clipping.')
     parser.add_argument('--seed',
                         type=int,
-                        default=224,
+                        default=669,
                         help='Random seed for reproducibility.')
     parser.add_argument('--ema_decay',
                         type=float,
                         default=0.999,
                         help='Decay rate for exponential moving average of parameters.')
+    parser.add_argument('--char2idx_file',
+                        type=str,
+                        default='./data/char2idx.json')
 
     args = parser.parse_args()
 

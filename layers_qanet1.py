@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import math
 
 import layers_char_embed
+from util import masked_softmax
 
 dropout = 0.1
 d_model = 128
@@ -264,8 +265,13 @@ class Pointer(nn.Module):
         X2 = torch.cat([M1, M3], dim=1)
         Y1 = torch.matmul(self.w1, X1)
         Y2 = torch.matmul(self.w2, X2)
-        Y1 = mask_logits(Y1, mask)
-        Y2 = mask_logits(Y2, mask)
-        p1 = F.log_softmax(Y1, dim=1)
-        p2 = F.log_softmax(Y2, dim=1)
+        #print('M1 is', M1)
+        #print('M2 is', M2)
+        #print('Y1 is', Y1)
+        p1 = masked_softmax(Y1, mask, log_softmax=True)
+        p2 = masked_softmax(Y2, mask, log_softmax=True)
+
+        #print('p1 is', p1)
+        #p1 = F.log_softmax(Y1, dim=1)
+        #p2 = F.log_softmax(Y2, dim=1)
         return p1, p2
