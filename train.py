@@ -17,7 +17,7 @@ import util
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF, BiDAFWithChar, QANet
+from models import BiDAF, BiDAFWithChar, QANet1
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
@@ -57,7 +57,7 @@ def main(args):
                 drop_prob=args.drop_prob)
     elif "qanet" in args.name:
         log.info('Training QANet')
-        model = QANet(word_vectors=word_vectors,
+        model = QANet1(word_vectors=word_vectors,
                     char_vectors = char_vectors,
                     drop_prob=args.drop_prob)  
     else:
