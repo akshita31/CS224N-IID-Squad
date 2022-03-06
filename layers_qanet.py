@@ -69,7 +69,7 @@ class QANetOutput(nn.Module):
         return log_p1, log_p2
 
 class Encoder(nn.Module):
-    def __init__(self, d_model, num_filters, kernel_size, num_conv_layers, num_heads, drop_prob=0.2):
+    def __init__(self, d_model, num_filters, kernel_size, num_conv_layers, num_heads, drop_prob):
         super(Encoder, self).__init__()
 
         self.num_filters = num_filters
@@ -83,12 +83,12 @@ class Encoder(nn.Module):
 
         #self attention
         self.att_layer_norm = nn.LayerNorm(d_model)
-        self.att = SelfAttention(d_model, num_heads)
+        self.att = SelfAttention(d_model, num_heads, attn_pdrop= self.drop_prob, resid_pdrop= self.drop_prob)
 
         #feed-forward-layers
         self.ffn_layer_norm = nn.LayerNorm(num_filters)
-        self.fc = Initialized_Conv1d(d_model, d_model, relu=True, bias=True)
-        # self.fc = nn.Linear(num_filters, num_filters, bias = True)
+        #self.fc = Initialized_Conv1d(d_model, d_model, relu=True, bias=True)
+        self.fc = nn.Linear(num_filters, num_filters, bias = True)
 
 
     def forward(self, x):
@@ -97,7 +97,8 @@ class Encoder(nn.Module):
 
         #print("Input embedding is", x[0][5][:10])
         # out = self.positional_encoder(x)
-        out = PosEncoder(x)
+        # out = PosEncoder(x)
+        out = x
         # print('Positional Encoding shape is', out.shape)
         assert (out.size() == (batch_size, seq_len, d_model))
         #print("Positional embedding is", out[0][5][:10])
@@ -128,7 +129,7 @@ class Encoder(nn.Module):
         res = out
 
         out = self.ffn_layer_norm(out)
-        out = self.fc(out.transpose(1,2)).transpose(1,2)
+        out = self.fc(out)
         out = F.relu(out)
         out = out + res
         out = F.dropout(out, p=self.drop_prob, training=self.training)
@@ -138,7 +139,7 @@ class Encoder(nn.Module):
         return out
 
 class SelfAttention(nn.Module):
-    def __init__(self, n_embed=128, n_head=8, attn_pdrop=0.1, resid_pdrop=0.1):
+    def __init__(self, n_embed, n_head, attn_pdrop, resid_pdrop):
         super(SelfAttention, self).__init__()
         self.n_head = n_head
         self.n_embed = n_embed
