@@ -7,6 +7,7 @@ Author:
 import layers
 import layers_char_embed
 import layers_qanet
+import layers_qanet1
 import torch
 import torch.nn as nn
 
@@ -270,7 +271,58 @@ class QANet(nn.Module):
         out = self.out(m1, m2, m3, c_mask)
 
         return out
+        
+class QANet1(nn.Module):
+    def __init__(self, word_vectors, char_vectors, drop_prob=0.):
+        super(QANet1, self).__init__()
+        # self.word_embed_size = word_vectors.size(1)
+        self.d_model = 128 # d model is the dimensionality of each word before and after it goes into the encoder layer, i
+        self.num_conv_filters = 128
 
-class QANetConfig:
-    def __init__(self) -> None:
-        pass
+        self.emb = layers_qanet.QANetEmbedding(word_vectors=word_vectors,
+                                    char_vectors=char_vectors,
+                                    drop_prob=drop_prob,
+                                    d_model= self.d_model)
+                        
+        self.context_conv = layers_qanet1.DepthwiseSeparableConv(500,self.d_model, 5)
+        self.question_conv = layers_qanet1.DepthwiseSeparableConv(500,self.d_model, 5)
+
+        self.c_emb_enc = layers_qanet1.EncoderBlock(conv_num=4, ch_num=self.d_model, k=7)
+        self.q_emb_enc = layers_qanet1.EncoderBlock(conv_num=4, ch_num=self.d_model, k=7)
+        self.cq_att = layers_qanet1.CQAttention()
+        self.cq_resizer = layers_qanet1.DepthwiseSeparableConv(self.d_model * 4, self.d_model, 5)
+        enc_blk = layers_qanet1.EncoderBlock(conv_num=2, ch_num=self.d_model, k=5)
+        self.model_enc_blks = nn.ModuleList([enc_blk] * 7)
+        self.out = layers_qanet1.Pointer()
+
+    def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
+        cmask = torch.zeros_like(cw_idxs) != cw_idxs
+        qmask = torch.zeros_like(qw_idxs) != qw_idxs
+        c_len, q_len = cmask.sum(-1), qmask.sum(-1)
+        batch_size = cw_idxs.shape[0]
+
+        # Cw, Cc = self.word_emb(cw_idxs), self.char_emb(cc_idxs)
+        # Qw, Qc = self.word_emb(qw_idxs), self.char_emb(qw_idxs)
+        # C, Q = self.emb(Cc, Cw), self.emb(Qc, Qw)
+        # c_emb = self.context_conv(C)  
+        # q_emb = self.question_conv(Q)  
+
+        # In QANet the projection is not applied and output of highway network is same size as the word+char embedding dim
+        c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, self.initial_embed_dim)
+        q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, self.initial_embed_dim)
+
+        c_emb = c_emb.transpose(1,2)
+        q_emb = q_emb.transpose(1,2)
+
+        Ce = self.c_emb_enc(c_emb, cmask)
+        Qe = self.q_emb_enc(q_emb, qmask)
+        
+        X = self.cq_att(Ce, Qe, cmask, qmask)
+        M1 = self.cq_resizer(X)
+        for enc in self.model_enc_blks: M1 = enc(M1, cmask)
+        M2 = M1
+        for enc in self.model_enc_blks: M2 = enc(M2, cmask)
+        M3 = M2
+        for enc in self.model_enc_blks: M3 = enc(M3, cmask)
+        p1, p2 = self.out(M1, M2, M3, cmask)
+        return p1, p2

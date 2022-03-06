@@ -11,7 +11,7 @@ class Initialized_Conv1d(nn.Module):
     def __init__(self, in_channels, out_channels,
                  kernel_size=1, stride=1, padding=0, groups=1,
                  relu=False, bias=False):
-        super().__init__()
+        super(Initialized_Conv1d, self).__init__()
         self.out = nn.Conv1d(
             in_channels, out_channels,
             kernel_size, stride=stride,
@@ -102,7 +102,6 @@ class Encoder(nn.Module):
         # print('Positional Encoding shape is', out.shape)
         assert (out.size() == (batch_size, seq_len, d_model))
         #print("Positional embedding is", out[0][5][:10])
-
         #out = out.add(x)
         #print("Out embedding is", out[0][5][:10])
         for i, conv_layer in enumerate(self.conv_layers):
@@ -190,16 +189,19 @@ class SelfAttention(nn.Module):
         return y
 
 class DepthwiseSeparableConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size):
-
-        # Can refernce this from - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L39
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True):
         super(DepthwiseSeparableConv, self).__init__()
-        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size, padding = kernel_size//2, groups = in_channels)
-        self.pointwiseConv = nn.Conv1d(in_channels, out_channels, kernel_size=1, padding = 0)
+        self.depthwise_conv = nn.Conv1d(in_channels=in_channels, out_channels=in_channels, kernel_size=kernel_size, groups=in_channels,
+                                            padding=kernel_size // 2, bias=bias)
+        self.pointwise_conv = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, padding=0, bias=bias)
+        nn.init.kaiming_normal_(self.depthwise_conv.weight)
+        nn.init.constant_(self.depthwise_conv.bias, 0.0)
+        nn.init.kaiming_normal_(self.pointwise_conv.weight)
+        nn.init.constant_(self.pointwise_conv.bias, 0.0)
 
     def forward(self, x):
-        out = self.pointwiseConv(self.depthwiseConv(x))
-        return out
+        return self.pointwise_conv(self.depthwise_conv(x))
+
 
 def PosEncoder(x, min_timescale=1.0, max_timescale=1.0e4):
     # x = x.transpose(1, 2)
