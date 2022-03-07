@@ -128,11 +128,11 @@ def get_train_args():
                         help='Maximum gradient norm for gradient clipping.')
     parser.add_argument('--seed',
                         type=int,
-                        default=669,
+                        default=224,
                         help='Random seed for reproducibility.')
     parser.add_argument('--ema_decay',
                         type=float,
-                        default=0.9999,
+                        default=0.999,
                         help='Decay rate for exponential moving average of parameters.')
 
     parser.add_argument('--beta1',
@@ -279,11 +279,11 @@ def add_train_test_args(parser):
                         help='Number of features in encoder hidden layers.')
     parser.add_argument('--num_heads',
                         type=int,
-                        default=4,
+                        default=8,
                         help='Number of heads for multihead attention')
     parser.add_argument('--num_blocks_model',
                         type=int,
-                        default=3,
+                        default=5,
                         help='Number of blocks in model encoder')
     parser.add_argument('--num_conv_model',
                         type=int,

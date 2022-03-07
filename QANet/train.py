@@ -71,6 +71,10 @@ def main(args):
                   dropout_word = args.dropout_word,
                   survival_prob = args.survival_prob)
     model = nn.DataParallel(model, args.gpu_ids)
+
+    log.info(model)
+    log.info(f"Total trainable params: {count_parameters(model)}")
+
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
         model, step = util.load_model(model, args.load_path, args.gpu_ids)
@@ -115,7 +119,7 @@ def main(args):
     steps_till_eval = args.eval_steps
     epoch = step // len(train_dataset)
 
-    torch.autograd.set_detect_anomaly(True)
+    #torch.autograd.set_detect_anomaly(True)
 
     
     while epoch != args.num_epochs:
@@ -238,6 +242,8 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
 
     return results, pred_dict
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 if __name__ == '__main__':
     main(get_train_args())

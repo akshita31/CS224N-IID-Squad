@@ -184,7 +184,7 @@ class Embedding_Encoder(nn.Module):
                                                 self.survival_prob,
                                                 self.total_depth) for _ in range(num_blocks)])
 
-    def forward(self, x_context, x_query, c_mask, q_mask):
+    def forward(self, x, mask):
         """QAnet embedding encoder
         Args: 
             @param x_context: context minibatch (batch_size, context_length,hidden_size)
@@ -196,9 +196,8 @@ class Embedding_Encoder(nn.Module):
             @returns x_query: (batch_size, query_length, hidden_size)
         """
         for i, block in zip(range(self.num_blocks), self.enc): 
-            x_context = block(x_context, c_mask, i*(self.num_conv + 2))
-            x_query = block(x_query, q_mask, i*(self.num_conv + 2))
-        return x_context, x_query
+            x = block(x, mask, i*(self.num_conv + 2))
+        return x
 
 
 class Model_Encoder(nn.Module): 

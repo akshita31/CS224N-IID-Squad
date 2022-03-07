@@ -60,12 +60,20 @@ class QANet(nn.Module):
                                     drop_prob_char= self.dropout_char,
                                     drop_prob_word= self.dropout_word )
 
-        self.embedding_projection = nn.Linear(self.embd_size, self.hidden_size)
+        self.context_projection = nn.Linear(self.embd_size, self.hidden_size)
+        self.question_projection = nn.Linear(self.embd_size, self.hidden_size)
         #nn.init.kaiming_normal_(self.embedding_projection.weight, nonlinearity = 'relu')
 
         self.emb_enc = layers.Embedding_Encoder( self.num_blocks_embd,
                                                  self.num_conv_embd,
-                                                 self.kernel_size,
+                                                 7,
+                                                 self.hidden_size,
+                                                 self.num_heads,
+                                                 self.survival_prob)
+
+        self.ques_enc = layers.Embedding_Encoder( self.num_blocks_embd,
+                                                 self.num_conv_embd,
+                                                 7,
                                                  self.hidden_size,
                                                  self.num_heads,
                                                  self.survival_prob)
@@ -77,7 +85,7 @@ class QANet(nn.Module):
 
         self.mod = layers.Model_Encoder(self.num_blocks_model, 
                                         self.num_conv_model, 
-                                        self.kernel_size, 
+                                        5,
                                         self.hidden_size, 
                                         self.num_heads, 
                                         self.survival_prob)
@@ -97,11 +105,12 @@ class QANet(nn.Module):
         q_emb = F.dropout(q_emb, self.drop_prob, self.training) 
 
         #Project Down 
-        c_emb = F.relu(self.embedding_projection(c_emb))
-        q_emb = F.relu(self.embedding_projection(q_emb))
+        c_emb = F.relu(self.context_projection(c_emb))
+        q_emb = F.relu(self.question_projection(q_emb))
 
         #Embedding Encoder
-        c_enc, q_enc = self.emb_enc(c_emb, q_emb, c_mask, q_mask) #(batch_size, q/c_len, hidden size)
+        c_enc = self.emb_enc(c_emb, c_mask) #(batch_size, q/c_len, hidden size)
+        q_enc = self.ques_enc(q_emb, q_mask)
 
         #Dropout 
         c_enc = F.dropout(c_enc, self.drop_prob, self.training)
