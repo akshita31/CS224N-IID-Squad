@@ -6,3 +6,5 @@ data/
 *.tar
 save/
 saved_results/
+QANet/data/
+QANet/save/
