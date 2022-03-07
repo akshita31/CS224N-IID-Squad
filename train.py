@@ -18,7 +18,8 @@ import util
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF, BiDAFWithChar, QANet1
+from models import BiDAF, BiDAFWithChar
+from qanet_model import QANet
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
@@ -60,10 +61,21 @@ def main(args):
                 drop_prob=args.drop_prob)
     elif "qanet" in args.name:
         log.info('Training QANet')
-        model = QANet1(word_vectors=word_vectors,
-                    char_vectors = char_vectors,
-                    char_vocab_size=char_vocab_size,
-                    drop_prob=args.drop_prob)  
+        model = QANet(word_vectors=word_vectors,
+                  hidden_size=args.hidden_size,
+                  char_vocab_size = char_vocab_size,
+                  char_emb_size = args.char_emb_size,
+                  word_char_emb_size = args.word_char_emb_size,
+                  drop_prob=args.drop_prob,
+                  num_blocks_embd = args.num_blocks_embd,
+                  num_conv_embd = args.num_conv_embd,
+                  kernel_size = args.kernel_size,
+                  num_heads = args.num_heads,
+                  num_blocks_model = args.num_blocks_model,
+                  num_conv_model = args.num_conv_model,
+                  dropout_char = args.dropout_char,
+                  dropout_word = args.dropout_word,
+                  survival_prob = args.survival_prob)
     else:
         log.info('Performing training without using Character Embedding')
         model = BiDAF(word_vectors=word_vectors,
@@ -99,16 +111,16 @@ def main(args):
     # lambda2 = lambda epoch: 1. # constant learning rate
     # scheduler = sched.LambdaLR(optimizer, lambda2)  # Constant LR
 
-    optimizer = optim.Adam(lr=1, betas=(0.8, 0.999), eps=1e-7, weight_decay=args.l2_wd, params=model.parameters())
-    cr = args.lr / math.log2(1000)
-    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda ee: cr * math.log2(ee + 1) if ee < 1000 else args.lr)
+    optimizer = optim.Adam(lr=1, betas=(args.beta1, args.beta2), eps=args.adam_eps, weight_decay=args.l2_wd, params=model.parameters())
+    cr = args.lr / math.log2(args.warm_up)
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda ee: cr * math.log2(ee + 1) if ee < args.warm_up else args.lr)
 
     # Get data loader
     log.info('Building dataset...')
     train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,
-                                   shuffle=False,
+                                   shuffle=True,
                                    num_workers=args.num_workers,
                                    collate_fn=collate_fn)
     dev_dataset = SQuAD(args.dev_record_file, args.use_squad_v2)

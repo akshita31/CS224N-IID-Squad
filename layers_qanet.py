@@ -39,7 +39,7 @@ class QANetOutput(nn.Module):
         hidden_size (int): Hidden size used in the BiDAF model.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, d_model, drop_prob):
+    def __init__(self, d_model):
         super(QANetOutput, self).__init__()
         self.start_linear = nn.Linear(2*d_model, 1, bias = False)
         self.end_linear = nn.Linear(2*d_model,1 , bias = False)

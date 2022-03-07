@@ -285,10 +285,8 @@ class output_layer(nn.Module):
             @returns end: end prediction 
         """
 
-        print('in1 is', in1)
         start = self.linear1(torch.cat((in1, in2 ), 2))
         end = self.linear2(torch.cat((in1, in3), 2))
-        print('start before softmax log is', start)
         start = masked_softmax(start.squeeze(), mask, log_softmax= True)
         end = masked_softmax(end.squeeze(), mask, log_softmax= True)
         #print('start is', start)
@@ -363,8 +361,6 @@ class PositionEncoder(nn.Module):
         self.signal2 = self.signal2.to(device)
 
     def forward(self, x):
-        #print(self.signal2.shape)
-        #print(x.shape)
         return x + self.signal2[:x.shape[1],:]
         
 

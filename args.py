@@ -2,6 +2,9 @@
 
 Author:
     Chris Chute (chute@stanford.edu)
+    Axel Moyal (axmoyal@stanford.edu)
+    Guillermo Bescos (gbescos@stanford.edu)
+    Lucas Soffer (lsoffer@stanford.edu) 
 """
 
 import argparse
@@ -34,9 +37,6 @@ def get_setup_args():
     parser.add_argument('--word2idx_file',
                         type=str,
                         default='./data/word2idx.json')
-    parser.add_argument('--char2idx_file',
-                        type=str,
-                        default='./data/char2idx.json')
     parser.add_argument('--answer_file',
                         type=str,
                         default='./data/answer.json')
@@ -99,11 +99,11 @@ def get_train_args():
                         help='Number of steps between successive evaluations.')
     parser.add_argument('--lr',
                         type=float,
-                        default=0.5,
+                        default=0.001,
                         help='Learning rate.')
     parser.add_argument('--l2_wd',
                         type=float,
-                        default=0,
+                        default=3e-7,
                         help='L2 weight decay.')
     parser.add_argument('--num_epochs',
                         type=int,
@@ -132,11 +132,28 @@ def get_train_args():
                         help='Random seed for reproducibility.')
     parser.add_argument('--ema_decay',
                         type=float,
-                        default=0.999,
+                        default=0.9999,
                         help='Decay rate for exponential moving average of parameters.')
-    parser.add_argument('--char2idx_file',
-                        type=str,
-                        default='./data/char2idx.json')
+
+    parser.add_argument('--beta1',
+                        type=float,
+                        default=0.8,
+                        help='b1')
+
+    parser.add_argument('--beta2',
+                    type=float,
+                    default=0.999,
+                    help='b2')
+
+    parser.add_argument('--adam_eps',
+                type=float,
+                default=1e-7,
+                help='eps for adam')
+
+    parser.add_argument('--warm_up',
+            type=float,
+            default=1000.,
+            help='warmup')
 
     args = parser.parse_args()
 
@@ -203,6 +220,9 @@ def add_common_args(parser):
     parser.add_argument('--test_eval_file',
                         type=str,
                         default='./data/test_eval.json')
+    parser.add_argument('--char2idx_file',
+                        type=str,
+                        default='./data/char2idx.json')
 
 
 def add_train_test_args(parser):
@@ -226,17 +246,61 @@ def add_train_test_args(parser):
                         help='Base directory for saving information.')
     parser.add_argument('--batch_size',
                         type=int,
-                        default=64,
-                        help='Batch size per GPU. Scales automatically when \
-                              multiple GPUs are available.')
+                        default=32,
+                        help='Batch size per GPU. Scales automatically when multiple GPUs are available.')
     parser.add_argument('--use_squad_v2',
                         type=lambda s: s.lower().startswith('t'),
                         default=True,
                         help='Whether to use SQuAD 2.0 (unanswerable) questions.')
+    parser.add_argument('--char_emb_size',
+                        type=int,
+                        default=200,
+                        help='Size of char embeddings')
+    parser.add_argument('--word_char_emb_size',
+                        type=int,
+                        default=200,
+                        help='Size of word char-level embeddings')
+
+    parser.add_argument('--num_blocks_embd',
+                        type=int,
+                        default=1,
+                        help='Number of blocks in the embedding encoder')
+    parser.add_argument('--num_conv_embd',
+                        type=int,
+                        default=4,
+                        help='Number of convolutional layers in the embedding encoder')
+    parser.add_argument('--kernel_size',
+                        type=int,
+                        default=7,
+                        help='Kernel size for convolutional layers')
     parser.add_argument('--hidden_size',
                         type=int,
-                        default=100,
+                        default=128,
                         help='Number of features in encoder hidden layers.')
+    parser.add_argument('--num_heads',
+                        type=int,
+                        default=4,
+                        help='Number of heads for multihead attention')
+    parser.add_argument('--num_blocks_model',
+                        type=int,
+                        default=3,
+                        help='Number of blocks in model encoder')
+    parser.add_argument('--num_conv_model',
+                        type=int,
+                        default=2,
+                        help='Number of convolutional layers in model encoder')
+    parser.add_argument('--dropout_char',
+                        type=float,
+                        default=0.1,
+                        help='Dropout rate for character embeddings'),
+    parser.add_argument('--dropout_word',
+                        type=float,
+                        default=0.2,
+                        help='Dropout rate for word embeddings')
+    parser.add_argument('--survival_prob',
+                        type=float,
+                        default=0.8,
+                        help='Survival rate in stochastic depth')
     parser.add_argument('--num_visuals',
                         type=int,
                         default=10,
