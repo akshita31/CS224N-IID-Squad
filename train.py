@@ -4,6 +4,7 @@ Author:
     Chris Chute (chute@stanford.edu)
 """
 
+import math
 import numpy as np
 import random
 import torch
@@ -17,7 +18,8 @@ import util
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF, BiDAFWithChar, QANet
+from models import BiDAF, BiDAFWithChar
+from qanet_model import QANet
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
@@ -46,6 +48,8 @@ def main(args):
     word_vectors = util.torch_from_json(args.word_emb_file)
     char_vectors = util.torch_from_json(args.char_emb_file)
 
+    with open(args.char2idx_file, 'r') as fh:
+        char_vocab_size = len(json_load(fh))
     # Get model
     log.info('Building model...')
 
@@ -58,8 +62,20 @@ def main(args):
     elif "qanet" in args.name:
         log.info('Training QANet')
         model = QANet(word_vectors=word_vectors,
-                    char_vectors = char_vectors,
-                    drop_prob=args.drop_prob)  
+                  hidden_size=args.hidden_size,
+                  char_vocab_size = char_vocab_size,
+                  char_emb_size = args.char_emb_size,
+                  word_char_emb_size = args.word_char_emb_size,
+                  drop_prob=args.drop_prob,
+                  num_blocks_embd = args.num_blocks_embd,
+                  num_conv_embd = args.num_conv_embd,
+                  kernel_size = args.kernel_size,
+                  num_heads = args.num_heads,
+                  num_blocks_model = args.num_blocks_model,
+                  num_conv_model = args.num_conv_model,
+                  dropout_char = args.dropout_char,
+                  dropout_word = args.dropout_word,
+                  survival_prob = args.survival_prob)
     else:
         log.info('Performing training without using Character Embedding')
         model = BiDAF(word_vectors=word_vectors,
@@ -88,12 +104,16 @@ def main(args):
 
     # Get optimizer and scheduler
 
-    lr_step = 15000 # change the learning rate after every 1 million steps (15000*64)
-    optimizer = optim.Adadelta(model.parameters(), args.lr,
-                               weight_decay=args.l2_wd)
-    lambda1 = lambda epoch: args.lr ** (epoch//lr_step) # decreasing learning rate
-    lambda2 = lambda epoch: args.lr # constant learning rate
-    scheduler = sched.LambdaLR(optimizer, lambda1)  # Constant LR
+    # lr_step = 15000 # change the learning rate after every 1 million steps (15000*64)
+    # optimizer = optim.Adadelta(model.parameters(), args.lr,
+    #                            weight_decay=args.l2_wd)
+    # lambda1 = lambda epoch: args.lr ** (epoch//lr_step) # decreasing learning rate
+    # lambda2 = lambda epoch: 1. # constant learning rate
+    # scheduler = sched.LambdaLR(optimizer, lambda2)  # Constant LR
+
+    optimizer = optim.Adam(lr=1, betas=(args.beta1, args.beta2), eps=args.adam_eps, weight_decay=args.l2_wd, params=model.parameters())
+    cr = args.lr / math.log2(args.warm_up)
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda ee: cr * math.log2(ee + 1) if ee < args.warm_up else args.lr)
 
     # Get data loader
     log.info('Building dataset...')

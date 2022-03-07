@@ -7,6 +7,28 @@ import math
 
 from util import masked_softmax
 
+class Initialized_Conv1d(nn.Module):
+    def __init__(self, in_channels, out_channels,
+                 kernel_size=1, stride=1, padding=0, groups=1,
+                 relu=False, bias=False):
+        super(Initialized_Conv1d, self).__init__()
+        self.out = nn.Conv1d(
+            in_channels, out_channels,
+            kernel_size, stride=stride,
+            padding=padding, groups=groups, bias=bias)
+        if relu is True:
+            self.relu = True
+            nn.init.kaiming_normal_(self.out.weight, nonlinearity='relu')
+        else:
+            self.relu = False
+            nn.init.xavier_uniform_(self.out.weight)
+
+    def forward(self, x):
+        if self.relu is True:
+            return F.relu(self.out(x))
+        else:
+            return self.out(x)
+
 class QANetOutput(nn.Module):
     """Output layer used by QANet for question answering.
 
@@ -17,7 +39,7 @@ class QANetOutput(nn.Module):
         hidden_size (int): Hidden size used in the BiDAF model.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, d_model, drop_prob):
+    def __init__(self, d_model):
         super(QANetOutput, self).__init__()
         self.start_linear = nn.Linear(2*d_model, 1, bias = False)
         self.end_linear = nn.Linear(2*d_model,1 , bias = False)
@@ -47,11 +69,11 @@ class QANetOutput(nn.Module):
         return log_p1, log_p2
 
 class Encoder(nn.Module):
-    def __init__(self, d_model, num_filters, kernel_size, num_conv_layers, num_heads, drop_prob=0.2):
+    def __init__(self, d_model, num_filters, kernel_size, num_conv_layers, num_heads, drop_prob):
         super(Encoder, self).__init__()
 
         self.num_filters = num_filters
-        self.positional_encoder = PositionalEncoder(d_model)
+        #self.positional_encoder = PositionalEncoder(d_model)
         self.drop_prob = drop_prob
         self.num_conv_layers = num_conv_layers
 
@@ -61,10 +83,11 @@ class Encoder(nn.Module):
 
         #self attention
         self.att_layer_norm = nn.LayerNorm(d_model)
-        self.att = SelfAttention(d_model, num_heads)
+        self.att = SelfAttention(d_model, num_heads, attn_pdrop= self.drop_prob, resid_pdrop= self.drop_prob)
 
         #feed-forward-layers
         self.ffn_layer_norm = nn.LayerNorm(num_filters)
+        #self.fc = Initialized_Conv1d(d_model, d_model, relu=True, bias=True)
         self.fc = nn.Linear(num_filters, num_filters, bias = True)
 
 
@@ -72,13 +95,13 @@ class Encoder(nn.Module):
         # print('Input to encoder shape is', x.shape)
         (batch_size, seq_len, d_model) = x.shape
 
+        #print("Input embedding is", x[0][5][:10])
         # out = self.positional_encoder(x)
+        # out = PosEncoder(x)
         out = x
         # print('Positional Encoding shape is', out.shape)
         assert (out.size() == (batch_size, seq_len, d_model))
-        #print("Input embedding is", x[0][5][:10])
         #print("Positional embedding is", out[0][5][:10])
-
         #out = out.add(x)
         #print("Out embedding is", out[0][5][:10])
         for i, conv_layer in enumerate(self.conv_layers):
@@ -115,7 +138,7 @@ class Encoder(nn.Module):
         return out
 
 class SelfAttention(nn.Module):
-    def __init__(self, n_embed=128, n_head=8, attn_pdrop=0.1, resid_pdrop=0.1):
+    def __init__(self, n_embed, n_head, attn_pdrop, resid_pdrop):
         super(SelfAttention, self).__init__()
         self.n_head = n_head
         self.n_embed = n_embed
@@ -166,60 +189,59 @@ class SelfAttention(nn.Module):
         return y
 
 class DepthwiseSeparableConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size):
-
-        # Can refernce this from - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L39
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True):
         super(DepthwiseSeparableConv, self).__init__()
-        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size, padding = kernel_size//2, groups = in_channels)
-        self.pointwiseConv = nn.Conv1d(in_channels, out_channels, kernel_size=1, padding = 0)
+        self.depthwise_conv = nn.Conv1d(in_channels=in_channels, out_channels=in_channels, kernel_size=kernel_size, groups=in_channels,
+                                            padding=kernel_size // 2, bias=bias)
+        self.pointwise_conv = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, padding=0, bias=bias)
+        nn.init.kaiming_normal_(self.depthwise_conv.weight)
+        nn.init.constant_(self.depthwise_conv.bias, 0.0)
+        nn.init.kaiming_normal_(self.pointwise_conv.weight)
+        nn.init.constant_(self.pointwise_conv.bias, 0.0)
 
     def forward(self, x):
-        out = self.pointwiseConv(self.depthwiseConv(x))
-        return out
+        return self.pointwise_conv(self.depthwise_conv(x))
 
-class PositionalEncoder(nn.Module):
-    #Reference: https://github.com/tatp22/multidim-positional-encoding/blob/master/positional_encodings/positional_encodings.py
-    def __init__(self, in_channels):
-        super(PositionalEncoder, self).__init__()
 
-        if in_channels%2 == 0:
-            self.channels = in_channels
-        else:
-            self.channels = in_channels + 1
+def PosEncoder(x, min_timescale=1.0, max_timescale=1.0e4):
+    # x = x.transpose(1, 2)
+    length = x.size()[1]
+    channels = x.size()[2]
+    signal = get_timing_signal(length, channels, min_timescale, max_timescale)
+    return (x + signal.to(x.get_device()))
 
-        self.frequency_factor = 1.0 / (10000 ** (torch.arange(0, self.channels, 2).float() / self.channels))
 
-    def forward(self, tensor):
-
-        batch_size, x, orig_ch = tensor.shape
-        # print("positional encoding orig shape", tensor.shape)
-        pos_x = torch.arange(x, device=tensor.device).type(self.frequency_factor.type())
-        sin_inp_x = torch.einsum("i,j->ij", pos_x, self.frequency_factor)
-        # print("sin_inp_x apply sincos", sin_inp_x.shape)
-        emb_x = torch.cat((sin_inp_x.sin(), sin_inp_x.cos()), dim=-1)
-        #print("embx apply sincos", emb_x.shape)
-        emb = torch.zeros((x, self.channels), device=tensor.device).type(tensor.type())
-        #print("emb zeros", emb.shape)
-        emb[:, : self.channels] = emb_x
-        #print("output", emb[None, :, :orig_ch].repeat(batch_size, 1, 1).shape)
-        return emb[None, :, :orig_ch].repeat(batch_size, 1, 1)
+def get_timing_signal(length, channels,
+                      min_timescale=1.0, max_timescale=1.0e4):
+    position = torch.arange(length).type(torch.float32)
+    num_timescales = channels // 2
+    log_timescale_increment = (math.log(float(max_timescale) / float(min_timescale)) / (float(num_timescales) - 1))
+    inv_timescales = min_timescale * torch.exp(
+            torch.arange(num_timescales).type(torch.float32) * -log_timescale_increment)
+    scaled_time = position.unsqueeze(1) * inv_timescales.unsqueeze(0)
+    signal = torch.cat([torch.sin(scaled_time), torch.cos(scaled_time)], dim = 1)
+    m = nn.ZeroPad2d((0, (channels % 2), 0, 0))
+    signal = m(signal)
+    signal = signal.view(1, length, channels)
+    return signal
       
 class QANetEmbedding(nn.Module):
     """Combines the Word and Character embedding and then applies a transformation and highway network.
     Output of this layer will be (batch_size, seq_len, hidden_size)
     """
 
-    def __init__(self, word_vectors, char_vectors, drop_prob, num_filters):
+    def __init__(self, word_vectors, char_vectors, drop_prob, d_model):
         super(QANetEmbedding, self).__init__()
         self.drop_prob = drop_prob
         self.word_embed_size = word_vectors.size(1)
         self.batch_size = word_vectors.size(0)
+        self.d_model = d_model
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)   
-        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = num_filters)
+        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = 100)
         self.char_embed_dim = self.char_embed.GetCharEmbedDim()
-
-        self.hwy = HighwayEncoder(2, self.char_embed_dim + self.word_embed_size)
+        # self.conv1d = Initialized_Conv1d(self.word_embed_size + self.char_embed_dim, self.d_model, bias=False)
+        self.hwy = HighwayEncoder(2, self.word_embed_size + self.char_embed_dim)
 
     def forward(self, word_idxs, char_idxs):
         word_emb = self.word_embed(word_idxs)
@@ -231,6 +253,7 @@ class QANetEmbedding(nn.Module):
         word_emb = F.dropout(word_emb, self.drop_prob, self.training)
         
         emb = torch.cat((word_emb, char_emb), dim = 2)
+        #emb = self.conv1d(emb.transpose(1,2)).transpose(1,2)
         emb = self.hwy(emb)
 
         assert(emb.shape == (batch_size, seq_len, self.GetOutputEmbeddingDim()))
