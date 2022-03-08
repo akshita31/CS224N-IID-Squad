@@ -9,6 +9,7 @@ import argparse
 
 def get_setup_args():
     """Get arguments needed in setup.py."""
+    print("Getting setup args!")
     parser = argparse.ArgumentParser('Download and pre-process SQuAD')
 
     add_common_args(parser)
@@ -88,6 +89,7 @@ def get_setup_args():
 
 def get_train_args():
     """Get arguments needed in train.py."""
+    print("Getting training args")
     parser = argparse.ArgumentParser('Train a model on SQuAD')
 
     add_common_args(parser)
@@ -178,6 +180,11 @@ def get_train_args():
                         type=int,
                         default=64,
                         help='Size of char vectors (char-level embeddings)')
+    parser.add_argument('--split',
+                        type=str,
+                        default='dev',
+                        choices=('train', 'dev', 'test'),
+                        help='Split to use for testing.')
 
     args = parser.parse_args()
 
@@ -195,6 +202,7 @@ def get_train_args():
 
 def get_test_args():
     """Get arguments needed in test.py."""
+    print("Getting test args!")
     parser = argparse.ArgumentParser('Test a trained model on SQuAD')
 
     add_common_args(parser)
@@ -209,6 +217,14 @@ def get_test_args():
                         type=str,
                         default='submission.csv',
                         help='Name for submission file.')
+    parser.add_argument('--n_encoder_blocks',
+                        type=int,
+                        default=7,
+                        help='Number of layers of encoder blocks in QANet.')
+    parser.add_argument('--n_head',
+                        type=int,
+                        default=8,
+                        help='Number of attention heads in QANet.')
 
     # Require load_path for test.py
     args = parser.parse_args()
@@ -220,6 +236,7 @@ def get_test_args():
 
 def add_common_args(parser):
     """Add arguments common to all 3 scripts: setup.py, train.py, test.py"""
+    print("common args added!")
     parser.add_argument('--train_record_file',
                         type=str,
                         default='./data/train.npz')
@@ -248,6 +265,7 @@ def add_common_args(parser):
 
 def add_train_test_args(parser):
     """Add arguments common to train.py and test.py"""
+    print("train test args added!")
     parser.add_argument('--name',
                         '-n',
                         type=str,
