@@ -134,6 +134,50 @@ def get_train_args():
                         type=float,
                         default=0.999,
                         help='Decay rate for exponential moving average of parameters.')
+    parser.add_argument('--qanet_lr',
+                        type=float,
+                        default=0.001,
+                        help='Learning rate.')
+    parser.add_argument('--lr_warm_up_num',
+                        type=int,
+                        default=1000,
+                        help='Number of steps for warming up training.')
+    parser.add_argument('--n_encoder_blocks',
+                        type=int,
+                        default=7,
+                        help='Number of layers of encoder blocks in QANet.')
+    parser.add_argument('--n_head',
+                        type=int,
+                        default=8,
+                        help='Number of attention heads in QANet.')
+    parser.add_argument('--d_model',
+                        type=int,
+                        default=128,
+                        help='Dimension of connectors in QANet.')
+    parser.add_argument('--qanet_dropout',
+                        type=float,
+                        default=0.1,
+                        help='Probability of zeroing an activation in dropout layers.')
+    parser.add_argument('--qanet_char_dropout',
+                        type=float,
+                        default=0.05,
+                        help='Probability of zeroing an activation in dropout layers.')
+    parser.add_argument('--use_pretrained_char',
+                        type=lambda s: s.lower().startswith('t'),
+                        default=True,
+                        help='Whether to use pretrained character embeddings.')
+    parser.add_argument('--glove_num_vecs',
+                        type=int,
+                        default=2196017,
+                        help='Number of GloVe vectors')
+    parser.add_argument('--glove_dim',
+                        type=int,
+                        default=300,
+                        help='Size of GloVe word vectors to use')
+    parser.add_argument('--char_dim',
+                        type=int,
+                        default=64,
+                        help='Size of char vectors (char-level embeddings)')
 
     args = parser.parse_args()
 
