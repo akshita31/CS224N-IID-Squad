@@ -13,6 +13,7 @@ import torch.optim as optim
 import torch.optim.lr_scheduler as sched
 import torch.utils.data as data
 import util
+import math
 
 from args import get_train_args
 from collections import OrderedDict
@@ -23,6 +24,7 @@ from tqdm import tqdm
 from ujson import load as json_load
 from util import collate_fn, SQuAD
 
+import tensorflow as tf
 
 def main(args):
     # Set up logging and devices
@@ -55,20 +57,25 @@ def main(args):
                 char_vectors = char_vectors,
                 hidden_size=args.hidden_size,
                 drop_prob=args.drop_prob)
-        log.info(model)
+    # elif "qanet" in args.name:
+    #     log.info('Training QANet')
+    #     model = QANet(word_vectors=word_vectors,
+    #                 char_vectors = char_vectors,
+    #                 drop_prob=args.drop_prob)
     elif "qanet" in args.name:
-        log.info('Training QANet')
-        model = QANet(word_vectors=word_vectors,
-                    char_vectors = char_vectors,
-                    drop_prob=args.drop_prob)
-        log.info(model)       
+        model = QANet(word_mat=word_vectors,
+                      char_mat=char_vectors,
+                      n_encoder_blocks=args.n_encoder_blocks,
+                      n_head=args.n_head)
     else:
         log.info('Performing training without using Character Embedding')
         model = BiDAF(word_vectors=word_vectors,
                 char_vectors = char_vectors,
                 hidden_size=args.hidden_size,
                 drop_prob=args.drop_prob)
-        log.info(model)          
+    
+    log.info(model)
+    log.info(f"Total trainable params: {count_parameters(model)}")          
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
@@ -87,13 +94,48 @@ def main(args):
                                  log=log)
 
     # Get optimizer and scheduler
+    #
+    # lr_step = 15000 # change the learning rate after every 1 million steps (15000*64)
+    # optimizer = optim.Adadelta(model.parameters(), args.lr,
+    #                            weight_decay=args.l2_wd)
+    # lambda1 = lambda epoch: args.lr ** (epoch//lr_step) # decreasing learning rate
+    # lambda2 = lambda epoch: args.lr # constant learning rate
+    # scheduler = sched.LambdaLR(optimizer, lambda1)  # Constant LR
 
-    lr_step = 15000 # change the learning rate after every 1 million steps (15000*64)
-    optimizer = optim.Adadelta(model.parameters(), args.lr,
-                               weight_decay=args.l2_wd)
-    lambda1 = lambda epoch: args.lr ** (epoch//lr_step) # decreasing learning rate
-    lambda2 = lambda epoch: args.lr # constant learning rate
-    scheduler = sched.LambdaLR(optimizer, lambda1)  # Constant LR
+    # Get optimizer and scheduler
+
+    if args.name == 'baseline':
+        optimizer = optim.Adadelta(model.parameters(), args.lr,
+                                   weight_decay=args.l2_wd)
+        scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
+
+    else:
+
+        parameters = filter(lambda param: param.requires_grad,
+
+                            model.parameters())
+
+        base_lr = 1
+
+        lr = args.qanet_lr
+
+        lr_warm_up_num = args.lr_warm_up_num
+
+        # Optimizer
+
+        optimizer = optim.Adam(lr=base_lr, betas=(0.9, 0.999), eps=1e-7,
+
+                               weight_decay=5e-8, params=parameters)
+
+        # LR scheduler
+
+        cr = lr / math.log2(lr_warm_up_num)
+
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer,
+
+                                                lr_lambda=lambda ee: cr * math.log2(ee + 1)
+
+                                                if ee < lr_warm_up_num else lr)
 
     # Get data loader
     log.info('Building dataset...')
@@ -131,6 +173,10 @@ def main(args):
                 optimizer.zero_grad()
 
                 # Forward
+                # print("cw_idxs: ", tf.shape(cw_idxs))
+                # print("qw_idxs: ", tf.shape(qw_idxs))
+                # print("cc_idxs: ", tf.shape(cc_idxs))
+                # print("qc_idxs: ", tf.shape(qc_idxs))
                 log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
@@ -236,6 +282,8 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
 
     return results, pred_dict
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 if __name__ == '__main__':
     main(get_train_args())
