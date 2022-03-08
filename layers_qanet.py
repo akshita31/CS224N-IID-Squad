@@ -31,71 +31,6 @@ class Initialized_Conv1d(nn.Module):
         else:
             self.relu = False
             nn.init.xavier_uniform_(self.out.weight)
-# =======
-
-from util import masked_softmax
-
-class QANetOutput(nn.Module):
-    """Output layer used by QANet for question answering.
-
-    As mentioned in the paper, output size of the encoding layers is (hidden_size = 128)
-    They are basically the query informed context words representations
-    
-    Args:
-        hidden_size (int): Hidden size used in the BiDAF model.
-        drop_prob (float): Probability of zero-ing out activations.
-    """
-    def __init__(self, d_model, drop_prob):
-        super(QANetOutput, self).__init__()
-        self.start_linear = nn.Linear(2*d_model, 1, bias = False)
-        self.end_linear = nn.Linear(2*d_model,1 , bias = False)
-
-    def forward(self, m0, m1, m2, mask):
-        
-        (batch_size, seq_len, d_model) = m0.shape
-
-        # (batch_size, seq_len, hidden_size)
-        start_enc = torch.cat((m0, m1), dim =2)
-        end_enc = torch.cat((m0, m2), dim = 2)
-
-        assert(start_enc.shape == (batch_size, seq_len, 2*d_model))
-        assert(end_enc.shape == (batch_size, seq_len, 2*d_model))
-
-        # Shapes: (batch_size, seq_len, 1)
-        logits_1 = self.start_linear(start_enc)
-        logits_2 = self.end_linear(end_enc)
-
-        assert(logits_1.shape == (batch_size, seq_len, 1))
-        assert(logits_2.shape == (batch_size, seq_len, 1))
-
-        # Shapes: (batch_size, seq_len)
-        log_p1 = masked_softmax(logits_1.squeeze(dim=2), mask, log_softmax=True)
-        log_p2 = masked_softmax(logits_2.squeeze(dim=2), mask, log_softmax=True)
-
-        return log_p1, log_p2
-
-class Encoder(nn.Module):
-    def __init__(self, d_model, num_filters, kernel_size, num_conv_layers, num_heads, drop_prob=0.2):
-        super(Encoder, self).__init__()
-
-        self.num_filters = num_filters
-        self.positional_encoder = PositionalEncoder(d_model)
-        self.drop_prob = drop_prob
-        self.num_conv_layers = num_conv_layers
-
-        #depthwise separable conv
-        self.conv_layer_norms = nn.ModuleList([nn.LayerNorm(d_model) for _ in range(num_conv_layers)])
-        self.conv_layers = nn.ModuleList([DepthwiseSeparableConv(d_model, num_filters, kernel_size) for _ in range(num_conv_layers)])
-
-        #self attention
-        self.att_layer_norm = nn.LayerNorm(d_model)
-        self.att = SelfAttention(d_model, num_heads)
-
-        #feed-forward-layers
-        self.ffn_layer_norm = nn.LayerNorm(num_filters)
-        self.fc = nn.Linear(num_filters, num_filters, bias = True)
-
-# >>>>>>> main
 
     def forward(self, x):
         if self.relu == True:
@@ -140,29 +75,6 @@ class DepthwiseSeparableConv(nn.Module):
                                         kernel_size=1, padding=0, bias=bias)
     def forward(self, x):
         return F.relu(self.pointwise_conv(self.depthwise_conv(x)))
-
-# =======
-        # out = self.positional_encoder(x)
-        out = x
-        # print('Positional Encoding shape is', out.shape)
-        assert (out.size() == (batch_size, seq_len, d_model))
-        #print("Input embedding is", x[0][5][:10])
-        #print("Positional embedding is", out[0][5][:10])
-
-        #out = out.add(x)
-        #print("Out embedding is", out[0][5][:10])
-        for i, conv_layer in enumerate(self.conv_layers):
-            res = out
-            out = self.conv_layer_norms[i](out)
-            out = torch.transpose(out, 1, 2)
-            out = conv_layer(out)
-            out = torch.transpose(out, 1, 2)
-            out = F.relu(out)
-            out = out + res
-            if (i + 1) % 2 == 0:
-                p_drop = self.drop_prob * (i + 1) / self.num_conv_layers
-                out = F.dropout(out, p=p_drop, training=self.training)
-# >>>>>>> main
 
 class Highway(nn.Module):
     def __init__(self, layer_num: int, size=D):
@@ -334,18 +246,6 @@ class EncoderBlock(nn.Module):
         out = self.FFN_1(out)
         out = self.FFN_2(out)
         out = self.layer_dropout(out, res, dropout*float(l)/total_layers)
-# =======
-class DepthwiseSeparableConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size):
-
-        # Can refernce this from - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L39
-        super(DepthwiseSeparableConv, self).__init__()
-        self.depthwiseConv = nn.Conv1d(in_channels, in_channels, kernel_size, padding = kernel_size//2, groups = in_channels)
-        self.pointwiseConv = nn.Conv1d(in_channels, out_channels, kernel_size=1, padding = 0)
-
-    def forward(self, x):
-        out = self.pointwiseConv(self.depthwiseConv(x))
-# >>>>>>> main
         return out
 
     def layer_dropout(self, inputs, residual, dropout):

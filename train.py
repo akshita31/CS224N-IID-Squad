@@ -126,9 +126,7 @@ def main(args):
         base_lr = 1
 
         lr = args.qanet_lr
-
         lr_warm_up_num = args.lr_warm_up_num
-
         # Optimizer
 
         optimizer = optim.Adam(lr=base_lr, betas=(0.9, 0.999), eps=1e-7,
@@ -138,7 +136,6 @@ def main(args):
         # LR scheduler
 
         cr = lr / math.log2(lr_warm_up_num)
-
         scheduler = optim.lr_scheduler.LambdaLR(optimizer,
 
                                                 lr_lambda=lambda ee: cr * math.log2(ee + 1)
