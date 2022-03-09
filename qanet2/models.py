@@ -69,6 +69,8 @@ class QANetNew(nn.Module):
         # self.num_conv_filters = 128
         self.word_emb = nn.Embedding.from_pretrained(torch.Tensor(word_mat), freeze=True)
         self.emb = layersnew.Embedding()
+
+        self.embedding = layersnew.QANetEmbedding(word_vectors=word_mat, char_vectors=char_mat, drop_prob=dropout, num_filters=100)
         self.emb_enc = layersnew.EncoderBlock(
             conv_num=4, ch_num=D, k=7, n_head=n_head)
         self.cq_att = layersnew.CQAttention()
@@ -125,16 +127,17 @@ class QANetNew(nn.Module):
         # batch_size = cw_idxs.shape[0]
         maskC = (torch.zeros_like(Cwid) != Cwid).float()
         maskQ = (torch.zeros_like(Qwid) != Qwid).float()
-        Cw, Cc = self.word_emb(Cwid), self.char_emb(Ccid)
+        #Cw, Cc = self.word_emb(Cwid), self.char_emb(Ccid)
         # (bs, ctxt_len, word_emb_dim=300), (bs, ctxt_len, char_lim, char_emb_dim=64)
-        Qw, Qc = self.word_emb(Qwid), self.char_emb(Qcid)
+        #Qw, Qc = self.word_emb(Qwid), self.char_emb(Qcid)
         # In QANet the projection is not applied and output of highway network is same size as the word+char embedding dim
         # c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, self.initial_embed_dim)
         # q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, self.initial_embed_dim)
         # (bs, ques_len, word_emb_dim=300), (bs, ques_len, char_lim, char_emb_dim=64)
         # c_emb = self.context_conv(c_emb.transpose(1,2)).transpose(1,2) # (batch_size, self.num_conv_filters, c_len)
         # q_emb = self.question_conv(q_emb.transpose(1,2)).transpose(1,2) # (batch_size, self.num_conv_filters, q_len)
-        C, Q = self.emb(Cc, Cw), self.emb(Qc, Qw)
+        #C, Q = self.emb(Cc, Cw), self.emb(Qc, Qw)
+        C, Q = self.embedding(Cwid, Ccid), self.embedding(Qwid, Qcid)
         # c_enc = self.embedding_encoder_context(c_emb)
         # q_enc = self.embedding_encoder_question(q_emb)
         Ce = self.emb_enc(C, maskC, 1, 1) # (bs, d_model, ctxt_len)

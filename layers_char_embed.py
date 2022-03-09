@@ -24,7 +24,7 @@ class _CharEmbedding(nn.Module):
         
         self.input_char_emb_size = char_vectors.size(1)
         self.num_filters = num_filters
-        self.char_embed = nn.Embedding.from_pretrained(char_vectors) #output will be (batch_size, seq_length, chars_per_word, input_embedding_len)
+        self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze = False) #output will be (batch_size, seq_length, chars_per_word, input_embedding_len)
         self.drop_prob = drop_prob
 
         self.conv1 = nn.Sequential(nn.Conv1d(in_channels = self.input_char_emb_size, out_channels =  self.num_filters, kernel_size = 3),# check dimensions passed here
