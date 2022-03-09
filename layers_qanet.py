@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import math
 
 import args
+from util import masked_softmax
 
 train_args = args.get_train_args()
 Dword = train_args.glove_dim
@@ -491,42 +492,42 @@ class Pointer(nn.Module):
         return p1, p2
 
 
-#class QANetOutput(nn.Module):
-#    """Output layer used by QANet for question answering.
-#
-#    As mentioned in the paper, output size of the encoding layers is (hidden_size = 128)
-#    They are basically the query informed context words representations
-#
-#    Args:
-#        hidden_size (int): Hidden size used in the BiDAF model.
-#        drop_prob (float): Probability of zero-ing out activations.
-#    """
-#    def __init__(self, d_model, drop_prob):
-#        super(QANetOutput, self).__init__()
-#        self.start_linear = nn.Linear(2*d_model, 1, bias = False)
-#        self.end_linear = nn.Linear(2*d_model,1 , bias = False)
-#
-#    def forward(self, m0, m1, m2, mask):
-#
-#        (batch_size, seq_len, d_model) = m0.shape
-#
-#        # (batch_size, seq_len, hidden_size)
-#        start_enc = torch.cat((m0, m1), dim =2)
-#        end_enc = torch.cat((m0, m2), dim = 2)
-#
-#        assert(start_enc.shape == (batch_size, seq_len, 2*d_model))
-#        assert(end_enc.shape == (batch_size, seq_len, 2*d_model))
-#
-#        # Shapes: (batch_size, seq_len, 1)
-#        logits_1 = self.start_linear(start_enc)
-#        logits_2 = self.end_linear(end_enc)
-#
-#        assert(logits_1.shape == (batch_size, seq_len, 1))
-#        assert(logits_2.shape == (batch_size, seq_len, 1))
-#
-#        # Shapes: (batch_size, seq_len)
-#        log_p1 = masked_softmax(logits_1.squeeze(dim=2), mask, log_softmax=True)
-#        log_p2 = masked_softmax(logits_2.squeeze(dim=2), mask, log_softmax=True)
-#
-#        return log_p1, log_p2
+class QANetOutput(nn.Module):
+   """Output layer used by QANet for question answering.
+
+   As mentioned in the paper, output size of the encoding layers is (hidden_size = 128)
+   They are basically the query informed context words representations
+
+   Args:
+       hidden_size (int): Hidden size used in the BiDAF model.
+       drop_prob (float): Probability of zero-ing out activations.
+   """
+   def __init__(self, d_model):
+       super(QANetOutput, self).__init__()
+       self.start_linear = Initialized_Conv1d(2*d_model, 1)
+       self.end_linear = Initialized_Conv1d(2*d_model, 1)
+
+   def forward(self, m0, m1, m2, mask):
+
+       (batch_size, d_model, seq_len) = m0.shape
+
+       # (batch_size, seq_len, hidden_size)
+       start_enc = torch.cat((m0, m1), dim =1)
+       end_enc = torch.cat((m0, m2), dim = 1)
+
+       assert(start_enc.shape == (batch_size, 2*d_model, seq_len))
+       assert(end_enc.shape == (batch_size, 2*d_model, seq_len))
+
+       # Shapes: (batch_size, seq_len, 1)
+       logits_1 = self.start_linear(start_enc)
+       logits_2 = self.end_linear(end_enc)
+
+       assert(logits_1.shape == (batch_size, 1, seq_len))
+       assert(logits_2.shape == (batch_size, 1, seq_len))
+
+       # Shapes: (batch_size, seq_len)
+       log_p1 = masked_softmax(logits_1.squeeze(dim=1), mask, log_softmax=True)
+       log_p2 = masked_softmax(logits_2.squeeze(dim=1), mask, log_softmax=True)
+
+       return log_p1, log_p2
 
