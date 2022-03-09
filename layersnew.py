@@ -23,47 +23,30 @@ class _CharEmbedding(nn.Module):
         self.drop_char = drop_char
         self.num_filters = num_filters
         self.drop_prob = drop_prob
+        self.d_model = d_model
 
-        self.conv1 = nn.Sequential(nn.Conv1d(in_channels = self.input_char_emb_size, out_channels =  self.num_filters, kernel_size = 3),# check dimensions passed here
-                                nn.ReLU(),
-                                nn.BatchNorm1d(num_features = self.num_filters),
-                                # nn.Dropout(p = drop_prob),
-                                nn.AdaptiveMaxPool1d(1)) # output will be (batch_size*seq_length, num_filters, 1)
-
-        self.conv2 = nn.Sequential(nn.Conv1d(in_channels = self.input_char_emb_size, out_channels =  self.num_filters, kernel_size = 5),# check dimensions passed here
-                                nn.ReLU(),
-                                nn.BatchNorm1d(num_features = self.num_filters),
-                                # nn.Dropout(p = drop_prob),
-                                nn.AdaptiveMaxPool1d(1)) # output will be (batch_size*seq_length, num_filters, 1)
+        self.conv2d = nn.Conv2d(self.input_char_emb_size, d_model, kernel_size=(1,5), padding=0, bias=True)
+        nn.init.kaiming_normal_(self.conv2d.weight, nonlinearity='relu')
 
     def forward(self, char_idxs):
 
         (batch_size, seq_len, _) = char_idxs.shape
-        char_idxs = char_idxs.reshape(batch_size*seq_len, -1)
 
         emb = self.char_embed(char_idxs)
+        emb = emb.permute(0, 3, 1, 2)
         emb = F.dropout(emb, self.drop_char, self.training)
+        emb = self.conv2d(emb)
+        emb = F.relu(emb)
+        emb, _ = torch.max(emb, dim=3)
+        emb = emb.squeeze()
+        emb = emb.transpose(1,2)
 
-        emb = torch.transpose(emb, 1, 2)
-
-        emb1 = self.conv1(emb)
-        emb1 = torch.squeeze(emb1, dim=2)
-
-        emb2= self.conv2(emb)
-        emb2 = torch.squeeze(emb2, dim=2)
-
-        emb = torch.cat((emb1, emb2), dim=1)
-
-        # assert(emb.shape == (batch_size*seq_len, self.num_filters, 1))
-        #emb = torch.squeeze(emb, dim=2)
-        emb = emb.reshape(batch_size, seq_len, -1)
-
-        assert(emb.shape == (batch_size, seq_len, self.num_filters *2))
+        assert(emb.shape == (batch_size, self.d_model, seq_len))
 
         return emb
 
     def GetCharEmbedDim(self):
-        return self.num_filters *2
+        return self.d_model
 
 class QANetEmbedding(nn.Module):
    """Combines the Word and Character embedding and then applies a transformation and highway network.
@@ -90,12 +73,13 @@ class QANetEmbedding(nn.Module):
        char_emb = self.char_embed(char_idxs)
 
        (batch_size, seq_len, _) = word_emb.shape
-       assert(char_emb.shape == (batch_size, seq_len, self.char_embed_dim))
+       assert(char_emb.shape == (batch_size, self.char_embed_dim, seq_len))
 
        word_emb = F.dropout(word_emb, self.drop_prob, self.training)
-
-       emb = torch.cat((word_emb, char_emb), dim = 2)
-       emb = emb.transpose(1, 2)
+       word_emb = word_emb.transpose(1,2)
+       emb = torch.cat((word_emb, char_emb), dim = 1)
+       
+       assert(emb.shape == (batch_size, self.word_embed_size + self.char_embed_dim, seq_len))
        emb = self.resizer(emb)
        emb = self.hwy(emb)
 
