@@ -1,11 +1,18 @@
 import torch
 import torch.nn as nn
-import torch.nn.Functional as F
+import torch.nn.functional as F
 
-import layers
-from .. import args
+import layersnew
+import args
 
-class QANet(nn.Module):
+train_args = args.get_train_args()
+Dword = train_args.glove_dim
+Dchar = train_args.char_dim
+D = train_args.d_model
+dropout = train_args.qanet_dropout
+dropout_char = train_args.qanet_char_dropout
+
+class QANetNew(nn.Module):
     """"
     Based on two papers:
     First paper: "Bidirectional Attention Flow for Machine Comprehension"
@@ -32,7 +39,8 @@ class QANet(nn.Module):
     def __init__(self, word_mat, char_mat, n_encoder_blocks=7, n_head=4):
         super().__init__()
         #Dimension of connectors in QANet. #same as the d_model
-        D = layers.D
+        #D = layers.D
+        print('Model dimension is', D)
         self.Lc = None
         self.Lq = None
         self.n_model_enc_blks = n_encoder_blocks
@@ -60,11 +68,11 @@ class QANet(nn.Module):
         # self.d_model = 128 # d model is the dimensionality of each word before and after it goes into the encoder layer, i
         # self.num_conv_filters = 128
         self.word_emb = nn.Embedding.from_pretrained(torch.Tensor(word_mat), freeze=True)
-        self.emb = layers.Embedding()
-        self.emb_enc = layers.EncoderBlock(
+        self.emb = layersnew.Embedding()
+        self.emb_enc = layersnew.EncoderBlock(
             conv_num=4, ch_num=D, k=7, n_head=n_head)
-        self.cq_att = layers.CQAttention()
-        self.cq_resizer = layers.Initialized_Conv1d(4 * D, D)
+        self.cq_att = layersnew.CQAttention()
+        self.cq_resizer = layersnew.Initialized_Conv1d(4 * D, D)
         #         self.model_encoders =  nn.ModuleList([layers.Encoder(d_model=self.d_model,
         #                                                                 num_filters=self.num_conv_filters,
         #                                                                 kernel_size=5,
@@ -73,10 +81,10 @@ class QANet(nn.Module):
         #                                                                 drop_prob=drop_prob) for _ in range(5)])
         #         self.out = layers.QANetOutput(d_model=self.d_model, drop_prob=drop_prob)
         self.model_enc_blks = nn.ModuleList([
-            layers.EncoderBlock(conv_num=2, ch_num=D, k=5, n_head=n_head)
+            layersnew.EncoderBlock(conv_num=2, ch_num=D, k=5, n_head=n_head)
             for _ in range(n_encoder_blocks)
         ])
-        self.out = layers.QANetOutput()
+        self.out = layersnew.QANetOutput(d_model=D)
 
     #     def __init__(self, word_vectors, char_vectors, drop_prob=0.):
     #         super(QANet, self).__init__()
@@ -156,8 +164,8 @@ class QANet(nn.Module):
         #     m0 = enc(m0)
         #     m3 = m0
         #
-        #out = self.out(m1, m2, m3, c_mask)
+        out = self.out(M1, M2, M3, maskC)
         #
-        # return out
-        p1, p2 = self.out(M1, M2, M3, maskC) # (bs, ctxt_len)
-        return p1, p2
+        return out
+        #p1, p2 = self.out(M1, M2, M3, maskC) # (bs, ctxt_len)
+        #return p1, p2

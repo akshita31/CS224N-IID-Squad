@@ -18,12 +18,11 @@ import math
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF, BiDAFWithChar, QANet
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
 from util import collate_fn, SQuAD
-from qanet2.models import QANetNew
+from models import QANetNew
 
 import tensorflow as tf
 
@@ -50,43 +49,11 @@ def main(args):
     char_vectors = util.torch_from_json(args.char_emb_file)
 
     # Get model
-    log.info('Building model...')
-
-    if "CharEmbedding" in args.name:
-        log.info('Performing training using Character Embedding')
-        model = BiDAFWithChar(word_vectors=word_vectors,
-                char_vectors = char_vectors,
-                hidden_size=args.hidden_size,
-                drop_prob=args.drop_prob)
-
-    # elif "qanet" in args.name:
-    #     log.info('Training QANet')
-    #     model = QANet(word_vectors=word_vectors,
-    #                 char_vectors = char_vectors,
-    #                 drop_prob=args.drop_prob)
-    elif "qanetnew" in args.name:
-        model = QANetNew(word_mat=word_vectors,
+    log.info('Building model...')  
+    model = QANetNew(word_mat=word_vectors,
                       char_mat=char_vectors,
                       n_encoder_blocks=args.n_encoder_blocks,
                       n_head=args.n_head)
-    elif "qanet" in args.name:
-        model = QANet(word_mat=word_vectors,
-                      char_mat=char_vectors,
-                      n_encoder_blocks=args.n_encoder_blocks,
-                      n_head=args.n_head)
-# =======
-#     elif "qanet" in args.name:
-#         log.info('Training QANet')
-#         model = QANet(word_vectors=word_vectors,
-#                     char_vectors = char_vectors,
-#                     drop_prob=args.drop_prob)  
-# >>>>>>> main
-    else:
-        log.info('Performing training without using Character Embedding')
-        model = BiDAF(word_vectors=word_vectors,
-                char_vectors = char_vectors,
-                hidden_size=args.hidden_size,
-                drop_prob=args.drop_prob)
     
     log.info(model)
     log.info(f"Total trainable params: {count_parameters(model)}")          
