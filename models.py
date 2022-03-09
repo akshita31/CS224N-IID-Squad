@@ -215,7 +215,7 @@ class QANet(nn.Module):
             layers_qanet.EncoderBlock(conv_num=2, ch_num=D, k=5, n_head=n_head)
             for _ in range(n_encoder_blocks)
         ])
-        self.out = layers_qanet.Pointer()
+        self.out = layers_qanet.QANetOutput(D)
 
     #     def __init__(self, word_vectors, char_vectors, drop_prob=0.):
     #         super(QANet, self).__init__()
@@ -295,11 +295,11 @@ class QANet(nn.Module):
         #     m0 = enc(m0)
         #     m3 = m0
         #
-        # out = self.out(m1, m2, m3, c_mask)
+        out = self.out(M1, M2, M3, maskC)
         #
-        # return out
-        p1, p2 = self.out(M1, M2, M3, maskC) # (bs, ctxt_len)
-        return p1, p2
+        return out
+        # p1, p2 = self.out(M1, M2, M3, maskC) # (bs, ctxt_len)
+        # return p1, p2
 
 
 class QANetConfig:
