@@ -1,3 +1,4 @@
+from audioop import bias
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,12 +15,13 @@ class _CharEmbedding(nn.Module):
         num_filters: dimension of the output embeddings for each word.
     """
 
-    def __init__(self, char_vectors, drop_prob, num_filters) -> None:
+    def __init__(self, char_vectors, d_model, drop_char, drop_prob, num_filters) -> None:
         super(_CharEmbedding, self).__init__()
 
-        self.input_char_emb_size = char_vectors.size(1)
-        self.num_filters = num_filters
         self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze = False) #output will be (batch_size, seq_length, chars_per_word, input_embedding_len)
+        self.input_char_emb_size = char_vectors.size(1)
+        self.drop_char = drop_char
+        self.num_filters = num_filters
         self.drop_prob = drop_prob
 
         self.conv1 = nn.Sequential(nn.Conv1d(in_channels = self.input_char_emb_size, out_channels =  self.num_filters, kernel_size = 3),# check dimensions passed here
@@ -40,7 +42,7 @@ class _CharEmbedding(nn.Module):
         char_idxs = char_idxs.reshape(batch_size*seq_len, -1)
 
         emb = self.char_embed(char_idxs)
-        emb = F.dropout(emb, self.drop_prob, self.training)
+        emb = F.dropout(emb, self.drop_char, self.training)
 
         emb = torch.transpose(emb, 1, 2)
 
@@ -68,7 +70,7 @@ class QANetEmbedding(nn.Module):
    Output of this layer will be (batch_size, seq_len, hidden_size)
    """
 
-   def __init__(self, word_vectors, char_vectors, d_model, drop_prob, num_filters):
+   def __init__(self, word_vectors, char_vectors, d_model, drop_prob, drop_char, num_filters):
        super(QANetEmbedding, self).__init__()
        self.drop_prob = drop_prob
        self.word_embed_size = word_vectors.size(1)
@@ -76,10 +78,12 @@ class QANetEmbedding(nn.Module):
        self.d_model = d_model
 
        self.word_embed = nn.Embedding.from_pretrained(word_vectors)
-       self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = num_filters)
+       self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = num_filters, drop_char=drop_char)
        self.char_embed_dim = self.char_embed.GetCharEmbedDim()
        self.resizer = Initialized_Conv1d(self.word_embed_size + self.char_embed_dim, d_model, bias=False)
        self.hwy = Highway(2, d_model)
+       print('Using dropout for CharEmbedding as', drop_char)
+       print('Using dropout for WordEmbed as', drop_prob)
 
    def forward(self, word_idxs, char_idxs):
        word_emb = self.word_embed(word_idxs)

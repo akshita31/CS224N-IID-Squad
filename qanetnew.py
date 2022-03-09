@@ -53,7 +53,7 @@ class QANetNew(nn.Module):
         self.word_emb = nn.Embedding.from_pretrained(torch.Tensor(word_mat), freeze=True)
         self.emb = layers_qanet.Embedding()
 
-        self.embedding = layersnew.QANetEmbedding(word_mat, char_mat, D, drop_prob=layers_qanet.dropout, num_filters=100)
+        self.embedding = layersnew.QANetEmbedding(word_mat, char_mat, D, drop_prob=layers_qanet.dropout, drop_char = layers_qanet.dropout_char, num_filters=100)
         
         self.emb_enc = layers_qanet.EncoderBlock(
             conv_num=4, ch_num=D, k=7, n_head=n_head)
