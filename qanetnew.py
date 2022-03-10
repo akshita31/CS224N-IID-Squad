@@ -39,7 +39,7 @@ class QANetNew(nn.Module):
         
         self.emb_enc = layers_qanet.EncoderBlock(
             conv_num=4, ch_num=D, k=7, n_head=n_head)
-        self.cq_att = layers_qanet.CQAttention()
+        self.cq_att = layersnew.BiDAFAttention(hidden_size=D, drop_prob=layers_qanet.dropout)
         self.cq_resizer = layers_qanet.Initialized_Conv1d(4 * D, D)
         #         self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(d_model=self.d_model,
         #                                                                 num_filters=self.num_conv_filters,

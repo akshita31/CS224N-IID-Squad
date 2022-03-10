@@ -428,6 +428,86 @@ class EncoderBlock(nn.Module):
 # we find that, the DCN attention can provide a little benefit over simply applying context-to-query attention, so we adopt this strategy.
 # More concretely, we compute the column normalized matrix S of S by softmax function, and the
 # query-to-context attention is B = S · S CT .
+
+class BiDAFAttention(nn.Module):
+    """Bidirectional attention originally used by BiDAF.
+
+    Bidirectional attention computes attention in two directions:
+    The context attends to the query and the query attends to the context.
+    The output of this layer is the concatenation of [context, c2q_attention,
+    context * c2q_attention, context * q2c_attention]. This concatenation allows
+    the attention vector at each timestep, along with the embeddings from
+    previous layers, to flow through the attention layer to the modeling layer.
+    The output has shape (batch_size, context_len, 8 * hidden_size).
+
+    Args:
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations.
+    """
+    def __init__(self, hidden_size, drop_prob=0.1):
+        super(BiDAFAttention, self).__init__()
+        self.drop_prob = drop_prob
+        self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
+        for weight in (self.c_weight, self.q_weight, self.cq_weight):
+            nn.init.xavier_uniform_(weight)
+        
+        bias = torch.empty(1)
+        nn.init.constant_(bias, 0)
+        self.bias = nn.Parameter(bias)
+
+    def forward(self, c, q, c_mask, q_mask):
+
+        # c is the context. Its size will be (batch_size, context_len, hidden_size) as this is coming from the hidden state of the RNN
+        # q is the query. Its size will be (batch_size, query_len, hidden_size) 
+
+        c = c.transpose(1,2)
+        q = q.transpose(1,2)
+
+        batch_size, c_len, hidden_size = c.size()
+        q_len = q.size(1)
+        s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
+        c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
+        q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
+        s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len) #looks like context2query attention as we are setting the places where query has a pad element to 0 through the mask
+        s2 = masked_softmax(s, c_mask, dim=1)       # (batch_size, c_len, q_len)
+
+        # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
+        a = torch.bmm(s1, q) # a is final context to query attention
+        # a denotes the attention vector for each word of the context to the query
+        # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
+        b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
+
+        x = torch.cat([c, a, torch.mul(c,a), torch.mul(c, b)], dim=2)  # (bs, c_len, 4 * hid_size)
+        assert(x.shape == (batch_size, c_len, 4 * hidden_size))
+        
+        return x.transpose(1,2)
+
+    def get_similarity_matrix(self, c, q):
+        """Get the "similarity matrix" between context and query (using the
+        terminology of the BiDAF paper).
+
+        A naive implementation as described in BiDAF would concatenate the
+        three vectors then project the result with a single weight matrix. This
+        method is a more memory-efficient implementation of the same operation.
+
+        See Also:
+            Equation 1 in https://arxiv.org/abs/1611.01603
+        """
+        c_len, q_len = c.size(1), q.size(1)
+        c = F.dropout(c, self.drop_prob, self.training)  # (bs, c_len, hid_size)
+        q = F.dropout(q, self.drop_prob, self.training)  # (bs, q_len, hid_size)
+
+        # Shapes: (batch_size, c_len, q_len)
+        s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
+        s1 = torch.matmul(q, self.q_weight).transpose(1, 2)\
+                                           .expand([-1, c_len, -1])
+        s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
+        s = s0 + s1 + s2 + self.bias
+
+        return s
+
 class CQAttention(nn.Module):
     def __init__(self):
         super().__init__()
@@ -472,24 +552,6 @@ class CQAttention(nn.Module):
         # print('qanet_modules', subres0.shape, subres1.shape, subres2.shape)
         res = subres0 + subres1 + subres2
         res += self.bias
-        return res
-
-
-class Pointer(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.w1 = Initialized_Conv1d(D*2, 1)
-        self.w2 = Initialized_Conv1d(D*2, 1)
-
-    def forward(self, M1, M2, M3, mask):
-        X1 = torch.cat([M1, M2], dim=1)
-        X2 = torch.cat([M1, M3], dim=1)
-        Y1 = mask_logits(self.w1(X1).squeeze(), mask)
-        Y2 = mask_logits(self.w2(X2).squeeze(), mask)
-        # print(Y1[0])
-        p1 = F.log_softmax(Y1, dim=1)
-        p2 = F.log_softmax(Y2, dim=1)
-        return p1, p2
 
 
 class QANetOutput(nn.Module):
