@@ -59,6 +59,9 @@ def main(args):
                 hidden_size=args.hidden_size,
                 drop_prob=args.drop_prob)
     elif "qanetnew" in args.name:
+        log.info("Training QANet")
+        log.info("No. of enocoder blocks is", args.n_encoder_blocks)
+        log.info("No. of attention heads is", args.n_head)
         model = QANetNew(word_mat=word_vectors,
                       char_mat=char_vectors,
                       n_encoder_blocks=args.n_encoder_blocks,
