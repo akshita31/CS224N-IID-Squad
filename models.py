@@ -202,7 +202,7 @@ class QANet(nn.Module):
         self.emb = layers_qanet.the_embedding_layer()
         self.emb_enc = layers_qanet.the_encoder_block_layer(4, D, 7, n_head)
         self.cq_att = layers_qanet.the_context_query_attention_layer()
-        self.cq_resizer = layers_qanet.initializing_convolutional_oneD_layer(4 * D, D)
+        self.cq_resizer = layers_qanet.repeated_initialization(4 * D, D, 1, False, 1, 0, 1, False)
         #         self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(d_model=self.d_model,
         #                                                                 num_filters=self.num_conv_filters,
         #                                                                 kernel_size=5,

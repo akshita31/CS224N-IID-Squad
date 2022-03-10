@@ -7,7 +7,7 @@ import args
 
 
 
-#The dimension of connectors in Qa-Network is used to be 128.
+# The dimension of connectors in Qa-Network used here is 128.
 # layers_qa_net_d_model = args.get_train_args().d_model
 # 4. Model Encoder Layer. Similar to Seo et al. (2016)
 # the input of this layer at each position is [c, a, c ⊙ a, c ⊙ b], where a and b are
@@ -15,38 +15,39 @@ import args
 # Encoder Layer except that convolution layer number is 2 within a block and the total number of blocks are
 # 7. We share weights between each of the 3 repetitions of the model encoder.
 class the_encoder_block_layer(nn.Module):
-    def __init__(self, number_of_convolutions, number_of_characters, k: int, n_head=8):
+    def __init__(self, number_of_convolutions, number_of_characters, k: int, number_of_heads=8):
         super().__init__()
-        self.norm_1 = nn.LayerNorm(128)
-        self.norm_2 = nn.LayerNorm(128)
+        self.layer_norm_1 = nn.LayerNorm(128)
+        self.layer_norm_2 = nn.LayerNorm(128)
         list_of_submodules = [nn.LayerNorm(128) for index in range(number_of_convolutions)]
         self.convolutional_norm = nn.ModuleList(list_of_submodules)
-        self.convs = nn.ModuleList([the_depth_wise_separable_convolution(number_of_characters, number_of_characters, k) for _ in range(number_of_convolutions)])
-        self.self_att = the_self_attention_layer(n_head)
-        self.FFN_1 = initializing_convolutional_oneD_layer(number_of_characters, number_of_characters, relu=True, bias=True)
-        self.FFN_2 = initializing_convolutional_oneD_layer(number_of_characters, number_of_characters, bias=True)
+        list_of_submodules2 = [the_depth_wise_separable_convolution(number_of_characters, number_of_characters, k) for _ in range(number_of_convolutions)]
+        self.convs = nn.ModuleList(list_of_submodules2)
+        self.self_att = the_self_attention_layer(number_of_heads)
+        # def __init__(self, in_channels, out_channels, kernel_size=1, relu=False, stride=1, padding=0, groups=1, bias=False):
+        self.FFN_1 = repeated_initialization(number_of_characters, number_of_characters,1, True, 1, 0, 1, True)
+        self.FFN_2 = repeated_initialization(number_of_characters, number_of_characters, 1, True, 0, 1, False)
         self.conv_num = number_of_convolutions
 
-    def forward(self, x, mask, l, blks):
-        total_layers = (self.conv_num+1)*blks
+    def forward(self, x, mask, l, number_of_blocks):
+        total_layers = (self.conv_num+1)*number_of_blocks
         out = PosEncoder(x)
-        for i, conv in enumerate(self.convs):
+        for index, convolution in enumerate(self.convs):
             res = out
-            out = self.convolutional_norm[i](out.transpose(1,2)).transpose(1,2)
-            if (i) % 2 == 0:
+            out = self.convolutional_norm[index](out.transpose(1,2)).transpose(1,2)
+            if (index) % 2 == 0:
                 out = torch.nn.functional.dropout(out, p=0.1, training=self.training)
-            out = conv(out)
+            out = convolution(out)
             out = self.layer_dropout(out, res, 0.1*float(l)/total_layers)
             l += 1
         res = out
-        out = self.norm_1(out.transpose(1,2)).transpose(1,2)
+        out = self.layer_norm_1(out.transpose(1,2)).transpose(1,2)
         out = torch.nn.functional.dropout(out, p=0.1, training=self.training)
         out = self.self_att(out, mask)
         out = self.layer_dropout(out, res, 0.1*float(l)/total_layers)
         l += 1
         res = out
-
-        out = self.norm_2(out.transpose(1,2)).transpose(1,2)
+        out = self.layer_norm_2(out.transpose(1,2)).transpose(1,2)
         out = torch.nn.functional.dropout(out, p=0.1, training=self.training)
         out = self.FFN_1(out)
         out = self.FFN_2(out)
@@ -120,27 +121,6 @@ class the_context_query_attention_layer(nn.Module):
         res += self.bias
         return res
 
-class initializing_convolutional_oneD_layer(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=1, relu=False, 
-                 stride=1, padding=0, groups=1, bias=False):
-        super().__init__()
-        self.out = nn.Conv1d(
-            in_channels, out_channels, kernel_size, 
-            stride=stride, padding=padding, groups=groups, bias=bias)
-        if relu is True:
-            self.relu = True
-            # Note on Kaiming normal: https://towardsdatascience.com/understand-kaiming-initialization-and-implementation-detail-in-pytorch-f7aa967e9138
-            nn.init.kaiming_normal_(self.out.weight, nonlinearity='relu')
-        else:
-            self.relu = False
-            nn.init.xavier_uniform_(self.out.weight)
-
-    def forward(self, x):
-        if self.relu == True:
-            return nn.functional.relu(self.out(x))
-        else:
-            return self.out(x)
-
 # class PositionalEncoder(nn.Module):
 #     # Reference: https://github.com/tatp22/multidim-positional-encoding/blob/master/positional_encodings/positional_encodings.py
 #     def __init__(self, in_channels):
@@ -174,11 +154,11 @@ class the_high_way_network(nn.Module):
         super().__init__()
         self.n = layer_num
         self.linear = nn.ModuleList([
-            initializing_convolutional_oneD_layer(size, size, relu=False, bias=True)
+            repeated_initialization(size, size, 1, False, 1, 0, 1, True)
             for _ in range(self.n)
         ])
         self.gate = nn.ModuleList([
-            initializing_convolutional_oneD_layer(size, size, bias=True) for _ in range(self.n)])
+            repeated_initialization(size, size, 1, True, 1, 0, 1, False) for _ in range(self.n)])
 
     def forward(self, x):
         #x: shape [batch_size, hidden_size, length]
@@ -239,7 +219,7 @@ class the_embedding_layer(nn.Module):
         #The output is of the format: batch size, number of channels, height of input planes in pixels, and width in pixels.
         #Note on Kaiming normal: https://towardsdatascience.com/understand-kaiming-initialization-and-implementation-detail-in-pytorch-f7aa967e9138
         #Use He initialization
-        self.one_d_convolution = initializing_convolutional_oneD_layer(args.get_train_args().glove_dim+ 128, 128, bias=False)
+        self.one_d_convolution = repeated_initialization(args.get_train_args().glove_dim+ 128, 128, 1, False, 1, 0, 1, False)
         self.two_d_convolution = nn.Conv2d(in_channels=args.get_train_args().char_dim,  out_channels=128, kernel_size=(1,5), padding=0, bias=True)
         nn.init.kaiming_normal_(self.two_d_convolution.weight, nonlinearity='relu')
 
@@ -259,27 +239,25 @@ class the_embedding_layer(nn.Module):
         return total_embedding
 
 class the_self_attention_layer(nn.Module):
-    def __init__(self, n_head=8):
+    def __init__(self, number_of_heads=8):
         super().__init__()
         # self.n_head = n_head
         # self.n_embed = n_embed
-        self.n_head = n_head
-        self.mem_conv = initializing_convolutional_oneD_layer(
-            128,  128 * 2, kernel_size=1, relu=False, bias=False)
-        self.query_conv = initializing_convolutional_oneD_layer(
-            128,  128, kernel_size=1, relu=False, bias=False)
+        self.n_head = number_of_heads
+        # def __init__(self, in_channels, out_channels, kernel_size=1, relu=False, stride=1, padding=0, groups=1, bias=False):
+        self.mem_conv = repeated_initialization(128,  128 * 2, 1, False, 1, 0, 1, False)
+        self.query_conv = repeated_initialization(128,  128, 1, False, 1, 0, 1, False)
         # key, query, value projections for all heads
         # self.key = nn.Linear(self.n_embed, self.n_embed)
         # self.query = nn.Linear(self.n_embed, self.n_embed)
         # self.value = nn.Linear(self.n_embed, self.n_embed)
-        bias = torch.empty(1)
         #  regularization
         #  self.attn_drop = nn.Dropout(attn_pdrop)
         #  self.resid_drop = nn.Dropout(resid_pdrop)
         #  output projection
         #  self.proj = nn.Linear(self.n_embed, self.n_embed)
-        nn.init.constant_(bias, 0)
-        self.bias = nn.Parameter(bias)
+        nn.init.constant_(torch.empty(1), 0)
+        self.bias = nn.Parameter(torch.empty(1))
         #  we want to create a lower matrix so that attention is applied only to the words
         #  that preceed the current word. hence creating a matrix of max_seq_len
         #  max_seq_len = 500
@@ -297,24 +275,22 @@ class the_self_attention_layer(nn.Module):
         # k = self.key(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         # q = self.query(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         # v = self.value(x).view(B, seq_len, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        Q = self.split_last_dim(query, self.n_head)
+        Q = self.helper1(query, self.n_head)
         K, V = [
-            self.split_last_dim(tensor, self.n_head) 
+            self.helper1(tensor, self.n_head)
             for tensor in torch.split(memory,  128, dim=2)
         ]
-        # att = att.masked_fill(self.mask[:,:,:seq_len,:seq_len] == 0, -1e10) # todo: just use float('-inf') instead?
+        # att = att.masked_fill(self.mask[:,:,:seq_len,:seq_len] == 0, -1e10)
         # att = F.softmax(att, dim=-1)
         # att = self.attn_drop(att)
         # y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
         # y = y.transpose(1, 2).contiguous().view(B, seq_len, C) # re-assemble all head outputs side by side
         # y = self.resid_drop(self.proj(y))
         # return y
-
-
         key_depth_per_head =  128 // self.n_head
         Q *= key_depth_per_head**-0.5
         x = self.dot_product_attention(Q, K, V, mask = mask)
-        return self.combine_last_two_dim(x.permute(0,2,1,3)).transpose(1, 2)
+        return self.helper2(x.permute(0,2,1,3)).transpose(1, 2)
 
 
     def dot_product_attention(self, q, k ,v, bias = False, mask = None):
@@ -335,7 +311,7 @@ class the_self_attention_layer(nn.Module):
         weights = torch.nn.functional.dropout(weights, p=0.1, training=self.training)
         return torch.matmul(weights, v)
 
-    def split_last_dim(self, x, n):
+    def helper1(self, x, n):
         """Reshape x so that the last dimension becomes two dimensions.
         """
         old_shape = list(x.size())
@@ -344,7 +320,7 @@ class the_self_attention_layer(nn.Module):
         ret = x.view(new_shape)
         return ret.permute(0, 2, 1, 3)
 
-    def combine_last_two_dim(self, x):
+    def helper2(self, x):
         """Reshape x so that the last two dimension become one.
         """
         old_shape = list(x.size())
@@ -441,8 +417,8 @@ class the_self_attention_layer(nn.Module):
 class Pointer(nn.Module):
     def __init__(self):
         super().__init__()
-        self.w1 = initializing_convolutional_oneD_layer( 128*2, 1)
-        self.w2 = initializing_convolutional_oneD_layer( 128*2, 1)
+        self.w1 = repeated_initialization(128*2, 1,1,False, 1, 0, 1, False)
+        self.w2 = repeated_initialization(128*2, 1, 1, False, 1, 0,1,False)
 
     def forward(self, M1, M2, M3, mask):
         X1 = torch.cat([M1, M2], dim=1)
@@ -494,6 +470,24 @@ class Pointer(nn.Module):
 #
 #        return log_p1, log_p2
 
+class repeated_initialization(nn.Module):
+    #def __init__(self, in_channels, out_channels, kernel_size=1, relu=False, stride=1, padding=0, groups=1, bias=False):
+    def __init__(self, in_channels, out_channels, kernel_size, relu, stride, padding, groups, bias):
+        super().__init__()
+        self.out = nn.Conv1d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, groups=groups, bias=bias)
+        if relu is True:
+            self.relu = True
+            # Note on Kaiming normal: https://towardsdatascience.com/understand-kaiming-initialization-and-implementation-detail-in-pytorch-f7aa967e9138
+            nn.init.kaiming_normal_(self.out.weight, nonlinearity='relu')
+        else:
+            self.relu = False
+            nn.init.xavier_uniform_(self.out.weight)
+
+    def forward(self, x):
+        if self.relu == True:
+            return nn.functional.relu(self.out(x))
+        else:
+            return self.out(x)
 
 
 def mask_logits(inputs, mask):
