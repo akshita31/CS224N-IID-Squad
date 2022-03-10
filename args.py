@@ -89,7 +89,7 @@ def get_setup_args():
 
 def get_train_args():
     """Get arguments needed in train.py."""
-    print("Getting training args")
+    #print("Getting training args")
     parser = argparse.ArgumentParser('Train a model on SQuAD')
 
     add_common_args(parser)
@@ -113,7 +113,7 @@ def get_train_args():
                         help='Number of epochs for which to train. Negative means forever.')
     parser.add_argument('--drop_prob',
                         type=float,
-                        default=0.2,
+                        default=0.1,
                         help='Probability of zeroing an activation in dropout layers.')
     parser.add_argument('--metric_name',
                         type=str,
@@ -202,7 +202,7 @@ def get_train_args():
 
 def get_test_args():
     """Get arguments needed in test.py."""
-    print("Getting test args!")
+    #print("Getting test args!")
     parser = argparse.ArgumentParser('Test a trained model on SQuAD')
 
     add_common_args(parser)
@@ -236,7 +236,7 @@ def get_test_args():
 
 def add_common_args(parser):
     """Add arguments common to all 3 scripts: setup.py, train.py, test.py"""
-    print("common args added!")
+    #print("common args added!")
     parser.add_argument('--train_record_file',
                         type=str,
                         default='./data/train.npz')
@@ -265,7 +265,7 @@ def add_common_args(parser):
 
 def add_train_test_args(parser):
     """Add arguments common to train.py and test.py"""
-    print("train test args added!")
+    #print("train test args added!")
     parser.add_argument('--name',
                         '-n',
                         type=str,
