@@ -39,7 +39,7 @@ class QANetNew(nn.Module):
         
         self.emb_enc = layers_qanet.EncoderBlock(
             conv_num=4, ch_num=D, k=7, n_head=n_head)
-        self.cq_att = layers_qanet.CQAttention()
+        self.attention = layersnew.BiDAFAttention(hidden_size=D, drop_prob=layers_qanet.dropout)       
         self.cq_resizer = layers_qanet.Initialized_Conv1d(4 * D, D)
         #         self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(d_model=self.d_model,
         #                                                                 num_filters=self.num_conv_filters,
@@ -65,7 +65,7 @@ class QANetNew(nn.Module):
         
         Ce = self.emb_enc(C, maskC, 1, 1) # (bs, d_model, ctxt_len)
         Qe = self.emb_enc(Q, maskQ, 1, 1) # (bs, d_model, ques_len)
-        X = self.cq_att(Ce, Qe, maskC, maskQ) # (bs, 4 * d_model, ctxt_len)
+        X = self.attention(Ce, Qe, maskC, maskQ) # (bs, 4 * d_model, ctxt_len)
         # att = self.att(c_enc, q_enc, c_mask, q_mask)    # (batch_size, c_len, 4 * d_model)
         # m0 = self.att_conv(att.transpose(1,2)).transpose(1,2)
         # for i, enc in enumerate(self.model_encoders):

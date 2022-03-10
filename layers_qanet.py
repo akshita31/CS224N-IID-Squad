@@ -428,6 +428,7 @@ class EncoderBlock(nn.Module):
 # we find that, the DCN attention can provide a little benefit over simply applying context-to-query attention, so we adopt this strategy.
 # More concretely, we compute the column normalized matrix S of S by softmax function, and the
 # query-to-context attention is B = S · S CT .
+
 class CQAttention(nn.Module):
     def __init__(self):
         super().__init__()
@@ -460,7 +461,8 @@ class CQAttention(nn.Module):
         # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
         B = torch.bmm(torch.bmm(S1, S2.transpose(1, 2)), C)
         out = torch.cat([C, A, torch.mul(C, A), torch.mul(C, B)], dim=2) # (bs, ctxt_len, 4 * d_model)
-        return out.transpose(1, 2)
+        out =  out.transpose(1, 2)
+        return out
 
     def trilinear_for_attention(self, C, Q):
         C = F.dropout(C, p=dropout, training=self.training)
@@ -473,23 +475,6 @@ class CQAttention(nn.Module):
         res = subres0 + subres1 + subres2
         res += self.bias
         return res
-
-
-class Pointer(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.w1 = Initialized_Conv1d(D*2, 1)
-        self.w2 = Initialized_Conv1d(D*2, 1)
-
-    def forward(self, M1, M2, M3, mask):
-        X1 = torch.cat([M1, M2], dim=1)
-        X2 = torch.cat([M1, M3], dim=1)
-        Y1 = mask_logits(self.w1(X1).squeeze(), mask)
-        Y2 = mask_logits(self.w2(X2).squeeze(), mask)
-        # print(Y1[0])
-        p1 = F.log_softmax(Y1, dim=1)
-        p2 = F.log_softmax(Y2, dim=1)
-        return p1, p2
 
 
 class QANetOutput(nn.Module):
