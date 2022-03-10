@@ -33,26 +33,8 @@ class QANetNew(nn.Module):
         super().__init__()
         #Dimension of connectors in QANet. #same as the d_model
         D = layers_qanet.D
-        self.Lc = None
-        self.Lq = None
         self.n_model_enc_blks = n_encoder_blocks
         train_args = args.get_train_args()
-
-        if train_args.use_pretrained_char:
-            print('Using pretrained character embeddings.')
-            self.char_emb = nn.Embedding.from_pretrained(
-                torch.Tensor(char_mat), freeze=True)
-        else:
-            char_mat = torch.Tensor(char_mat)
-            self.char_emb = nn.Embedding.from_pretrained(char_mat, freeze=False)
-        #
-        # self.emb = layers_qanet.QANetEmbedding(word_vectors=word_vectors,char_vectors=char_vectors, drop_prob=drop_prob, num_filters=100)
-        # self.initial_embed_dim = self.emb.GetOutputEmbeddingDim()
-        # self.d_model = 128 # d model is the dimensionality of each word before and after it goes into the encoder layer, i
-        # self.num_conv_filters = 128
-        self.word_emb = nn.Embedding.from_pretrained(torch.Tensor(word_mat), freeze=True)
-        self.emb = layers_qanet.Embedding()
-
         self.embedding = layersnew.QANetEmbedding(word_mat, char_mat, D, drop_prob=layers_qanet.dropout, drop_char = layers_qanet.dropout_char, num_filters=100)
         
         self.emb_enc = layers_qanet.EncoderBlock(
@@ -75,10 +57,6 @@ class QANetNew(nn.Module):
 
     def forward(self, Cwid, Qwid, Ccid, Qcid):
         train_args = args.get_train_args()
-        # c_mask = torch.zeros_like(cw_idxs) != cw_idxs
-        # q_mask = torch.zeros_like(qw_idxs) != qw_idxs
-        # c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
-        # batch_size = cw_idxs.shape[0]
         maskC = (torch.zeros_like(Cwid) != Cwid).float()
         maskQ = (torch.zeros_like(Qwid) != Qwid).float()
         
@@ -113,5 +91,4 @@ class QANetNew(nn.Module):
         #     m3 = m0
         #
         out = self.out(M1, M2, M3, maskC)
-
         return out

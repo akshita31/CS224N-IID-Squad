@@ -1,4 +1,4 @@
-from audioop import bias
+import args
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,8 +17,13 @@ class _CharEmbedding(nn.Module):
 
     def __init__(self, char_vectors, d_model, drop_char, drop_prob, num_filters) -> None:
         super(_CharEmbedding, self).__init__()
-
-        self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze = False) #output will be (batch_size, seq_length, chars_per_word, input_embedding_len)
+        train_args = args.get_train_args()
+        if train_args.use_pretrained_char:
+            print('Using the pretrained char embeddings with Freeze = True')
+            self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze = True) #output will be (batch_size, seq_length, chars_per_word, input_embedding_len)
+        else:
+            print('Using the pretrained char embeddings with Freeze = false')
+            self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze = False) #output will be (batch_size, seq_length, chars_per_word, input_embedding_len)
         self.input_char_emb_size = char_vectors.size(1)
         self.drop_char = drop_char
         self.num_filters = num_filters
@@ -39,9 +44,8 @@ class _CharEmbedding(nn.Module):
         emb = F.relu(emb)
         emb, _ = torch.max(emb, dim=3)
         emb = emb.squeeze()
-        emb = emb.transpose(1,2)
 
-        assert(emb.shape == (batch_size, self.d_model, seq_len))
+        assert(emb.shape == (batch_size, self.GetCharEmbedDim(), seq_len))
 
         return emb
 
@@ -61,7 +65,7 @@ class QANetEmbedding(nn.Module):
        self.d_model = d_model
 
        self.word_embed = nn.Embedding.from_pretrained(word_vectors)
-       self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, num_filters = num_filters, drop_char=drop_char)
+       self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, d_model = d_model, num_filters = num_filters, drop_char=drop_char)
        self.char_embed_dim = self.char_embed.GetCharEmbedDim()
        self.resizer = Initialized_Conv1d(self.word_embed_size + self.char_embed_dim, d_model, bias=False)
        self.hwy = Highway(2, d_model)
