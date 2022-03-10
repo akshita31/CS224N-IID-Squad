@@ -53,7 +53,7 @@ class QANetNew(nn.Module):
             for _ in range(n_encoder_blocks)
         ])
 
-        self.out = layers_qanet.QANetOutput(D)
+        self.out = layers_qanet.QANetConditionalOutput(D)
 
     def forward(self, Cwid, Qwid, Ccid, Qcid):
         train_args = args.get_train_args()

@@ -516,3 +516,54 @@ class QANetOutput(nn.Module):
 
        return log_p1, log_p2
 
+class QANetConditionalOutput(nn.Module):
+   """Output layer used by QANet for question answering.
+
+   As mentioned in the paper, output size of the encoding layers is (hidden_size = 128)
+   They are basically the query informed context words representations
+
+   Args:
+       hidden_size (int): Hidden size used in the BiDAF model.
+       drop_prob (float): Probability of zero-ing out activations.
+   """
+   def __init__(self, d_model):
+       super(QANetConditionalOutput, self).__init__()
+       self.w0 = Initialized_Conv1d(2*d_model, d_model)
+       self.w1 = Initialized_Conv1d(2*d_model, d_model)
+
+       self.w2 = Initialized_Conv1d(d_model, 1)
+       self.w3 = Initialized_Conv1d(2*d_model, 1)
+
+   def forward(self, m0, m1, m2, mask):
+
+       (batch_size, d_model, seq_len) = m0.shape
+
+       # (batch_size, seq_len, hidden_size)
+       start_enc = torch.cat((m0, m1), dim =1)
+       end_enc = torch.cat((m0, m2), dim = 1)
+
+       assert(start_enc.shape == (batch_size, 2*d_model, seq_len))
+       assert(end_enc.shape == (batch_size, 2*d_model, seq_len))
+    
+       A = self.w0(start_enc) 
+       B = self.w1(end_enc) 
+
+       assert(A.shape == (batch_size, d_model, seq_len))
+       assert(B.shape == (batch_size, d_model, seq_len))
+
+       logits_1 = self.w2(A)
+       logits_2 = self.w3(torch.cat((A, B), dim = 1))
+
+       # Shapes: (batch_size, seq_len, 1)
+       #logits_1 = self.start_linear(start_enc)
+       #logits_2 = self.end_linear(end_enc)
+
+       assert(logits_1.shape == (batch_size, 1, seq_len))
+       assert(logits_2.shape == (batch_size, 1, seq_len))
+
+       # Shapes: (batch_size, seq_len)
+       log_p1 = masked_softmax(logits_1.squeeze(dim=1), mask, log_softmax=True)
+       log_p2 = masked_softmax(logits_2.squeeze(dim=1), mask, log_softmax=True)
+
+       return log_p1, log_p2
+
