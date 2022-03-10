@@ -1,24 +1,126 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional
 import math
 
 import args
 
-train_args = args.get_train_args()
-Dword = train_args.glove_dim
-Dchar = train_args.char_dim
-D = train_args.d_model
-dropout = train_args.qanet_dropout
-dropout_char = train_args.qanet_char_dropout
 
 
-def mask_logits(inputs, mask):
-    mask = mask.type(torch.float32)
-    return inputs + (-1e30) * (1 - mask)
+#The dimension of connectors in Qa-Network is used to be 128.
+# layers_qa_net_d_model = args.get_train_args().d_model
+# 4. Model Encoder Layer. Similar to Seo et al. (2016)
+# the input of this layer at each position is [c, a, c ⊙ a, c ⊙ b], where a and b are
+# respectively a row of attention matrix A and B. The layer parameters are the same as the Embedding
+# Encoder Layer except that convolution layer number is 2 within a block and the total number of blocks are
+# 7. We share weights between each of the 3 repetitions of the model encoder.
+class the_encoder_block_layer(nn.Module):
+    def __init__(self, number_of_convolutions, number_of_characters, k: int, n_head=8):
+        super().__init__()
+        self.norm_1 = nn.LayerNorm(128)
+        self.norm_2 = nn.LayerNorm(128)
+        list_of_submodules = [nn.LayerNorm(128) for index in range(number_of_convolutions)]
+        self.convolutional_norm = nn.ModuleList(list_of_submodules)
+        self.convs = nn.ModuleList([the_depth_wise_separable_convolution(number_of_characters, number_of_characters, k) for _ in range(number_of_convolutions)])
+        self.self_att = the_self_attention_layer(n_head)
+        self.FFN_1 = initializing_convolutional_oneD_layer(number_of_characters, number_of_characters, relu=True, bias=True)
+        self.FFN_2 = initializing_convolutional_oneD_layer(number_of_characters, number_of_characters, bias=True)
+        self.conv_num = number_of_convolutions
+
+    def forward(self, x, mask, l, blks):
+        total_layers = (self.conv_num+1)*blks
+        out = PosEncoder(x)
+        for i, conv in enumerate(self.convs):
+            res = out
+            out = self.convolutional_norm[i](out.transpose(1,2)).transpose(1,2)
+            if (i) % 2 == 0:
+                out = torch.nn.functional.dropout(out, p=0.1, training=self.training)
+            out = conv(out)
+            out = self.layer_dropout(out, res, 0.1*float(l)/total_layers)
+            l += 1
+        res = out
+        out = self.norm_1(out.transpose(1,2)).transpose(1,2)
+        out = torch.nn.functional.dropout(out, p=0.1, training=self.training)
+        out = self.self_att(out, mask)
+        out = self.layer_dropout(out, res, 0.1*float(l)/total_layers)
+        l += 1
+        res = out
+
+        out = self.norm_2(out.transpose(1,2)).transpose(1,2)
+        out = torch.nn.functional.dropout(out, p=0.1, training=self.training)
+        out = self.FFN_1(out)
+        out = self.FFN_2(out)
+        out = self.layer_dropout(out, res, 0.1*float(l)/total_layers)
+        return out
+
+    def layer_dropout(self, inputs, residual, dropout):
+        if self.training == True:
+            pred = torch.empty(1).uniform_(0,1) < dropout
+            if pred:
+                return residual
+            else:
+                return torch.nn.functional.dropout(inputs, dropout,
+                                 training=self.training) + residual
+        else:
+            return inputs + residual
 
 
-class Initialized_Conv1d(nn.Module):
+# 3. Context-Query Attention Layer. This module is standard in almost every previous reading comprehension models such as Weissenborn et al. (2017) and Chen et al. (2017). We use C and Q to denote the encoded context and query.
+# The context-to-query attention is constructed as follows: We first computer the similarities between each pair of context and query words, rendering a similarity matrix S ∈ Rn×m. We then normalize each row of S by applying the
+# softmax function, getting a matrixS.Thenthecontext-to-queryattentioniscomputedasA=S·QT ∈Rn×d.Thesimilarity function used here is the trilinear function (Seo et al., 2016):
+# f(q, c) = W0[q, c, q ⊙ c],
+# where ⊙ is the element-wise multiplication and W0 is a trainable variable.
+# Most high performing models additionally use some form of query-to-context attention, such as BiDaF (Seo et al., 2016) and DCN (Xiong et al., 2016). Empirically,
+# we find that, the DCN attention can provide a little benefit over simply applying context-to-query attention, so we adopt this strategy.
+# More concretely, we compute the column normalized matrix S of S by softmax function, and the
+# query-to-context attention is B = S · S CT .
+class the_context_query_attention_layer(nn.Module):
+    def __init__(self):
+        super().__init__()
+        w4C = torch.empty(128, 1)
+        w4Q = torch.empty(128, 1)
+        w4mlu = torch.empty(1, 1,  128)
+        nn.init.xavier_uniform_(w4C)
+        nn.init.xavier_uniform_(w4Q)
+        nn.init.xavier_uniform_(w4mlu)
+        self.w4C = nn.Parameter(w4C)
+        self.w4Q = nn.Parameter(w4Q)
+        self.w4mlu = nn.Parameter(w4mlu)
+
+        bias = torch.empty(1)
+        nn.init.constant_(bias, 0)
+        self.bias = nn.Parameter(bias)
+
+    def forward(self, C, Q, Cmask, Qmask):
+        C = C.transpose(1, 2) # after transpose (bs, ctxt_len, d_model)
+        Q = Q.transpose(1, 2)# after transpose (bs, ques_len, d_model)
+        batch_size = C.shape[0]
+        Lc, Lq = C.shape[1], Q.shape[1]
+        S = self.trilinear_for_attention(C, Q)
+        Cmask = Cmask.view(batch_size, Lc, 1)
+        Qmask = Qmask.view(batch_size, 1, Lq)
+        S1 = nn.functional.softmax(mask_logits(S, Qmask), dim=2)
+        S2 = nn.functional.softmax(mask_logits(S, Cmask), dim=1)
+        # (bs, ctxt_len, ques_len) x (bs, ques_len, d_model) => (bs, ctxt_len, d_model)
+        A = torch.bmm(S1, Q)
+        # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
+        B = torch.bmm(torch.bmm(S1, S2.transpose(1, 2)), C)
+        out = torch.cat([C, A, torch.mul(C, A), torch.mul(C, B)], dim=2) # (bs, ctxt_len, 4 * d_model)
+        return out.transpose(1, 2)
+
+    def trilinear_for_attention(self, C, Q):
+        C = torch.nn.functional.dropout(C, p=0.1, training=self.training)
+        Q = torch.nn.functional.dropout(Q, p=0.1, training=self.training)
+        Lc, Lq = C.shape[1], Q.shape[1]
+        subres0 = torch.matmul(C, self.w4C).expand([-1, -1, Lq])
+        subres1 = torch.matmul(Q, self.w4Q).transpose(1, 2).expand([-1, Lc, -1])
+        subres2 = torch.matmul(C * self.w4mlu, Q.transpose(1,2))
+        # print('qanet_modules', subres0.shape, subres1.shape, subres2.shape)
+        res = subres0 + subres1 + subres2
+        res += self.bias
+        return res
+
+class initializing_convolutional_oneD_layer(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=1, relu=False, 
                  stride=1, padding=0, groups=1, bias=False):
         super().__init__()
@@ -27,6 +129,7 @@ class Initialized_Conv1d(nn.Module):
             stride=stride, padding=padding, groups=groups, bias=bias)
         if relu is True:
             self.relu = True
+            # Note on Kaiming normal: https://towardsdatascience.com/understand-kaiming-initialization-and-implementation-detail-in-pytorch-f7aa967e9138
             nn.init.kaiming_normal_(self.out.weight, nonlinearity='relu')
         else:
             self.relu = False
@@ -34,7 +137,7 @@ class Initialized_Conv1d(nn.Module):
 
     def forward(self, x):
         if self.relu == True:
-            return F.relu(self.out(x))
+            return nn.functional.relu(self.out(x))
         else:
             return self.out(x)
 
@@ -63,32 +166,35 @@ class Initialized_Conv1d(nn.Module):
 #         # print("output", emb[None, :, :orig_ch].repeat(batch_size, 1, 1).shape)
 #         return emb[None, :, :orig_ch].repeat(batch_size, 1, 1)
 
-#A positional encoding is added to the input at the beginning of each encoder layer consisting of sin and cos functions at varying wavelengths,
-# as defined in (Vaswani et al., 2017a). Each sub-layer after the positional encoding (one of convolution, self-attention, or feed-forward-net)
-# inside the encoder structure is wrapped inside a residual block. (Page 3 of the paper).
-def PosEncoder(x, min_timescale=1.0, max_timescale=1.0e4):
-    x = x.transpose(1, 2)
-    length, channels = x.shape[1], x.shape[2]
-    signal = get_timing_signal(length, channels, min_timescale, max_timescale)
-    if torch.cuda.is_available():
-        signal = signal.cuda()
-    return (x + signal).transpose(1,2)
 
 
-def get_timing_signal(length, channels, min_timescale=1.0, max_timescale=1.0e4):
-    position = torch.arange(length).type(torch.float32)
-    num_timescales = channels // 2
-    log_timescale_increment = (
-        math.log(float(max_timescale) / float(min_timescale)) / (float(num_timescales)-1)
-    )
-    inv_timescales = min_timescale * torch.exp(
-        torch.arange(num_timescales).type(torch.float32) * -log_timescale_increment)
-    scaled_time = position.unsqueeze(1) * inv_timescales.unsqueeze(0)
-    signal = torch.cat([torch.sin(scaled_time), torch.cos(scaled_time)], dim = 1)
-    m = nn.ZeroPad2d((0, (channels % 2), 0, 0))
-    signal = m(signal)
-    signal = signal.view(1, length, channels)
-    return signal
+
+class the_high_way_network(nn.Module):
+    def __init__(self, layer_num: int, size= 128):
+        super().__init__()
+        self.n = layer_num
+        self.linear = nn.ModuleList([
+            initializing_convolutional_oneD_layer(size, size, relu=False, bias=True)
+            for _ in range(self.n)
+        ])
+        self.gate = nn.ModuleList([
+            initializing_convolutional_oneD_layer(size, size, bias=True) for _ in range(self.n)])
+
+    def forward(self, x):
+        #x: shape [batch_size, hidden_size, length]
+        for i in range(self.n):
+            gate = torch.sigmoid(self.gate[i](x))
+            nonlinear = self.linear[i](x)
+            nonlinear = torch.nn.functional.dropout(nonlinear, p=0.1, training=self.training)
+            x = gate * nonlinear + (1 - gate) * x
+            #x = F.relu(x)
+        return x
+    #
+    # for gate, transform in zip(self.gates, self.transforms):
+    #     # Shapes of g, t, and x are all (batch_size, seq_len, hidden_size)
+    #     g = torch.sigmoid(gate(x))
+    #     t = F.relu(transform(x))
+    #     x = g * t + (1 - g) * x
 
 
 #class DepthwiseSeparableConv(nn.Module):
@@ -101,7 +207,7 @@ def get_timing_signal(length, channels, min_timescale=1.0, max_timescale=1.0e4):
 #    #def forward(self, x):
 #        out = self.pointwiseConv(self.depthwiseConv(x))
 #        return out
-class DepthwiseSeparableConv(nn.Module):
+class the_depth_wise_separable_convolution(nn.Module):
     def __init__(self, in_ch, out_ch, k, bias=True):
         super().__init__()
         self.depthwise_conv = nn.Conv1d(
@@ -110,39 +216,58 @@ class DepthwiseSeparableConv(nn.Module):
         self.pointwise_conv = nn.Conv1d(in_channels=in_ch, out_channels=out_ch, 
                                         kernel_size=1, padding=0, bias=bias)
     def forward(self, x):
-        return F.relu(self.pointwise_conv(self.depthwise_conv(x)))
+        return nn.functional.relu(self.pointwise_conv(self.depthwise_conv(x)))
 
-class Highway(nn.Module):
-    def __init__(self, layer_num: int, size=D):
+#We adopt the standard techniques to obtain the embedding of each word w by concatenating its word embedding and character embedding.
+# The word embedding is fixed during training and initialized from the p1 = 300 dimensional pre-trained GloVe (Pennington et al., 2014) word vectors,
+# which are fixed during training. All the out-of-vocabulary words are mapped to an <UNK> token, whose embedding is trainable with
+# random initialization. The character embedding is obtained as follows: Each character is represented as a trainable vector
+# of dimension p2 = 200, meaning each word can be viewed as the concatenation of the embedding vectors for each of its characters.
+# The length of each word is either truncated or padded to 16. We take maximum value of each row of this matrix to get a fixed-size
+# vector representation of each word. Finally, the output of a given word x from this layer is the concatenation [xw;xc] ∈ Rp1+p2,
+# where xw and xc are the word embedding and the convolution output of character embedding of x respectively. Following Seo et al.
+# (2016), we also adopt a two-layer highway network (Srivastava et al., 2015) on top of this representation. For simplicity,
+# we also use x to denote the output of this layer.
+class the_embedding_layer(nn.Module):
+    def __init__(self):
         super().__init__()
-        self.n = layer_num
-        self.linear = nn.ModuleList([
-            Initialized_Conv1d(size, size, relu=False, bias=True) 
-            for _ in range(self.n)
-        ])
-        self.gate = nn.ModuleList([
-            Initialized_Conv1d(size, size, bias=True) for _ in range(self.n)])
+        self.high_way_network = the_high_way_network(2)
+        self.dim1, self.dim2, self.dim3, self.dim4 = 0, 3, 1, 2
+        # print("in channels: ", args.get_train_args().char_dim)
+        # print("out channels: ", args.get_train_args().d_model)
+        #Applies a 2D convolution layer over an input signal composed of several input planes.
+        #The output is of the format: batch size, number of channels, height of input planes in pixels, and width in pixels.
+        #Note on Kaiming normal: https://towardsdatascience.com/understand-kaiming-initialization-and-implementation-detail-in-pytorch-f7aa967e9138
+        #Use He initialization
+        self.one_d_convolution = initializing_convolutional_oneD_layer(args.get_train_args().glove_dim+ 128, 128, bias=False)
+        self.two_d_convolution = nn.Conv2d(in_channels=args.get_train_args().char_dim,  out_channels=128, kernel_size=(1,5), padding=0, bias=True)
+        nn.init.kaiming_normal_(self.two_d_convolution.weight, nonlinearity='relu')
 
-    def forward(self, x):
-        #x: shape [batch_size, hidden_size, length]
-        for i in range(self.n):
-            gate = torch.sigmoid(self.gate[i](x))
-            nonlinear = self.linear[i](x)
-            nonlinear = F.dropout(nonlinear, p=dropout, training=self.training)
-            x = gate * nonlinear + (1 - gate) * x
-            #x = F.relu(x)
-        return x
+    def forward(self, character_level_embedding, word_level_embedding):
+        #During training, randomly zeroes some of the elements of the input tensor with probability p using samples from a Bernoulli distribution.
+        word_level_embedding = torch.nn.functional.dropout(word_level_embedding, p=0.1, training=self.training)
+        word_level_embedding = word_level_embedding.transpose(1, 2)
+        intermediate1 = character_level_embedding.permute(self.dim1, self.dim2, self.dim3, self.dim4)
+        intermediate2 = torch.nn.functional.dropout(intermediate1, p=args.get_train_args().qanet_char_dropout, training=self.training)
+        intermediate3 = torch.nn.functional.relu(self.two_d_convolution(intermediate2))
+        intermediate4, _ = torch.max(intermediate3, dim=3)
+        character_level_embedding = intermediate4.squeeze()
+        #Concatenating the word level embedding and the character-level embedding
+        total_embedding = torch.cat([character_level_embedding, word_level_embedding], dim=1)
+        total_embedding = self.one_d_convolution(total_embedding)
+        total_embedding = self.high_way_network(total_embedding)
+        return total_embedding
 
-class SelfAttention(nn.Module):
+class the_self_attention_layer(nn.Module):
     def __init__(self, n_head=8):
         super().__init__()
         # self.n_head = n_head
         # self.n_embed = n_embed
         self.n_head = n_head
-        self.mem_conv = Initialized_Conv1d(
-            D, D * 2, kernel_size=1, relu=False, bias=False)
-        self.query_conv = Initialized_Conv1d(
-            D, D, kernel_size=1, relu=False, bias=False)
+        self.mem_conv = initializing_convolutional_oneD_layer(
+            128,  128 * 2, kernel_size=1, relu=False, bias=False)
+        self.query_conv = initializing_convolutional_oneD_layer(
+            128,  128, kernel_size=1, relu=False, bias=False)
         # key, query, value projections for all heads
         # self.key = nn.Linear(self.n_embed, self.n_embed)
         # self.query = nn.Linear(self.n_embed, self.n_embed)
@@ -175,7 +300,7 @@ class SelfAttention(nn.Module):
         Q = self.split_last_dim(query, self.n_head)
         K, V = [
             self.split_last_dim(tensor, self.n_head) 
-            for tensor in torch.split(memory, D, dim=2)
+            for tensor in torch.split(memory,  128, dim=2)
         ]
         # att = att.masked_fill(self.mask[:,:,:seq_len,:seq_len] == 0, -1e10) # todo: just use float('-inf') instead?
         # att = F.softmax(att, dim=-1)
@@ -186,7 +311,7 @@ class SelfAttention(nn.Module):
         # return y
 
 
-        key_depth_per_head = D // self.n_head
+        key_depth_per_head =  128 // self.n_head
         Q *= key_depth_per_head**-0.5
         x = self.dot_product_attention(Q, K, V, mask = mask)
         return self.combine_last_two_dim(x.permute(0,2,1,3)).transpose(1, 2)
@@ -205,9 +330,9 @@ class SelfAttention(nn.Module):
             shapes = [x  if x != None else -1 for x in list(logits.size())]
             mask = mask.view(shapes[0], 1, 1, shapes[-1])
             logits = mask_logits(logits, mask)
-        weights = F.softmax(logits, dim=-1)
+        weights = torch.nn.functional.softmax(logits, dim=-1)
         # dropping out the attention links for each of the heads
-        weights = F.dropout(weights, p=dropout, training=self.training)
+        weights = torch.nn.functional.dropout(weights, p=0.1, training=self.training)
         return torch.matmul(weights, v)
 
     def split_last_dim(self, x, n):
@@ -229,40 +354,7 @@ class SelfAttention(nn.Module):
         return ret
 
 
-#We adopt the standard techniques to obtain the embedding of each word w by concatenating its word embedding and character embedding.
-# The word embedding is fixed during training and initialized from the p1 = 300 dimensional pre-trained GloVe (Pennington et al., 2014) word vectors,
-# which are fixed during training. All the out-of-vocabulary words are mapped to an <UNK> token, whose embedding is trainable with
-# random initialization. The character embedding is obtained as follows: Each character is represented as a trainable vector
-# of dimension p2 = 200, meaning each word can be viewed as the concatenation of the embedding vectors for each of its characters.
-# The length of each word is either truncated or padded to 16. We take maximum value of each row of this matrix to get a fixed-size
-# vector representation of each word. Finally, the output of a given word x from this layer is the concatenation [xw;xc] ∈ Rp1+p2,
-# where xw and xc are the word embedding and the convolution output of character embedding of x respectively. Following Seo et al.
-# (2016), we also adopt a two-layer highway network (Srivastava et al., 2015) on top of this representation. For simplicity,
-# we also use x to denote the output of this layer.
 
-class Embedding(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv2d = nn.Conv2d(
-            Dchar, D, kernel_size=(1,5), padding=0, bias=True)
-        nn.init.kaiming_normal_(self.conv2d.weight, nonlinearity='relu')
-        self.conv1d = Initialized_Conv1d(Dword+D, D, bias=False)
-        self.high = Highway(2)
-
-    def forward(self, ch_emb, wd_emb):
-        ch_emb = ch_emb.permute(0, 3, 1, 2)
-        ch_emb = F.dropout(ch_emb, p=dropout_char, training=self.training)
-        ch_emb = self.conv2d(ch_emb)
-        ch_emb = F.relu(ch_emb)
-        ch_emb, _ = torch.max(ch_emb, dim=3)
-        ch_emb = ch_emb.squeeze()
-
-        wd_emb = F.dropout(wd_emb, p=dropout, training=self.training)
-        wd_emb = wd_emb.transpose(1, 2)
-        emb = torch.cat([ch_emb, wd_emb], dim=1)
-        emb = self.conv1d(emb)
-        emb = self.high(emb)
-        return emb
 #class QANetEmbedding(nn.Module):
 #    """Combines the Word and Character embedding and then applies a transformation and highway network.
 #    Output of this layer will be (batch_size, seq_len, hidden_size)
@@ -298,69 +390,7 @@ class Embedding(nn.Module):
 #    def GetOutputEmbeddingDim(self):
 #        return self.word_embed_size + self.char_embed_dim
 
-# 4. Model Encoder Layer. Similar to Seo et al. (2016)
-# , the input of this layer at each position is [c, a, c ⊙ a, c ⊙ b], where a and b are
-# respectively a row of attention matrix A and B. The layer parameters are the same as the Embedding
-# Encoder Layer except that convolution layer number is 2 within a block and the total number of blocks are
-# 7. We share weights between each of the 3 repetitions of the model encoder.
-class EncoderBlock(nn.Module):
-    def __init__(self, conv_num: int, ch_num: int, k: int, n_head=8):
-        super().__init__()
-        self.convs = nn.ModuleList([
-            DepthwiseSeparableConv(ch_num, ch_num, k) for _ in range(conv_num)
-        ])
-        self.self_att = SelfAttention(n_head)
-        self.FFN_1 = Initialized_Conv1d(ch_num, ch_num, relu=True, bias=True)
-        self.FFN_2 = Initialized_Conv1d(ch_num, ch_num, bias=True)
-        self.norm_C = nn.ModuleList([nn.LayerNorm(D) for _ in range(conv_num)])
-        self.norm_1 = nn.LayerNorm(D)
-        self.norm_2 = nn.LayerNorm(D)
-        self.conv_num = conv_num
-        #    def __init__(self, d_model, num_filters, kernel_size, num_conv_layers, num_heads, drop_prob=0.2):
-        #        super(Encoder, self).__init__()
-        #
-        #        self.num_filters = num_filters
-        #        self.positional_encoder = PositionalEncoder(d_model)
-        #        self.drop_prob = drop_prob
-        #        self.num_conv_layers = num_conv_layers
-        #
-        #        #depthwise separable conv
-        #        self.conv_layer_norms = nn.ModuleList([nn.LayerNorm(d_model) for _ in range(num_conv_layers)])
-        #        self.conv_layers = nn.ModuleList([DepthwiseSeparableConv(d_model, num_filters, kernel_size) for _ in range(num_conv_layers)])
-        #
-        #        #self attention
-        #        self.att_layer_norm = nn.LayerNorm(d_model)
-        #        self.att = SelfAttention(d_model, num_heads)
-        #
-        #        #feed-forward-layers
-        #        self.ffn_layer_norm = nn.LayerNorm(num_filters)
-        #        self.fc = nn.Linear(num_filters, num_filters, bias = True)
 
-    def forward(self, x, mask, l, blks):
-        total_layers = (self.conv_num+1)*blks
-        out = PosEncoder(x)
-        for i, conv in enumerate(self.convs):
-            res = out
-            out = self.norm_C[i](out.transpose(1,2)).transpose(1,2)
-            if (i) % 2 == 0:
-                out = F.dropout(out, p=dropout, training=self.training)
-            out = conv(out)
-            out = self.layer_dropout(out, res, dropout*float(l)/total_layers)
-            l += 1
-        res = out
-        out = self.norm_1(out.transpose(1,2)).transpose(1,2)
-        out = F.dropout(out, p=dropout, training=self.training)
-        out = self.self_att(out, mask)
-        out = self.layer_dropout(out, res, dropout*float(l)/total_layers)
-        l += 1
-        res = out
-
-        out = self.norm_2(out.transpose(1,2)).transpose(1,2)
-        out = F.dropout(out, p=dropout, training=self.training)
-        out = self.FFN_1(out)
-        out = self.FFN_2(out)
-        out = self.layer_dropout(out, res, dropout*float(l)/total_layers)
-        return out
 
     #def forward(self, x):
 #    (batch_size, seq_len, d_model) = x.shape
@@ -407,78 +437,12 @@ class EncoderBlock(nn.Module):
 #        assert (out.shape == (batch_size, seq_len, self.num_filters))
 #        return out
 
-    def layer_dropout(self, inputs, residual, dropout):
-        if self.training == True:
-            pred = torch.empty(1).uniform_(0,1) < dropout
-            if pred:
-                return residual
-            else:
-                return F.dropout(inputs, dropout, 
-                                 training=self.training) + residual
-        else:
-            return inputs + residual
-
-# 3. Context-Query Attention Layer. This module is standard in almost every previous reading comprehension models such as Weissenborn et al. (2017) and Chen et al. (2017). We use C and Q to denote the encoded context and query.
-# The context-to-query attention is constructed as follows: We first computer the similarities between each pair of context and query words, rendering a similarity matrix S ∈ Rn×m. We then normalize each row of S by applying the
-# softmax function, getting a matrixS.Thenthecontext-to-queryattentioniscomputedasA=S·QT ∈Rn×d.Thesimilarity function used here is the trilinear function (Seo et al., 2016):
-# f(q, c) = W0[q, c, q ⊙ c],
-# where ⊙ is the element-wise multiplication and W0 is a trainable variable.
-# Most high performing models additionally use some form of query-to-context attention, such as BiDaF (Seo et al., 2016) and DCN (Xiong et al., 2016). Empirically,
-# we find that, the DCN attention can provide a little benefit over simply applying context-to-query attention, so we adopt this strategy.
-# More concretely, we compute the column normalized matrix S of S by softmax function, and the
-# query-to-context attention is B = S · S CT .
-class CQAttention(nn.Module):
-    def __init__(self):
-        super().__init__()
-        w4C = torch.empty(D, 1)
-        w4Q = torch.empty(D, 1)
-        w4mlu = torch.empty(1, 1, D)
-        nn.init.xavier_uniform_(w4C)
-        nn.init.xavier_uniform_(w4Q)
-        nn.init.xavier_uniform_(w4mlu)
-        self.w4C = nn.Parameter(w4C)
-        self.w4Q = nn.Parameter(w4Q)
-        self.w4mlu = nn.Parameter(w4mlu)
-
-        bias = torch.empty(1)
-        nn.init.constant_(bias, 0)
-        self.bias = nn.Parameter(bias)
-
-    def forward(self, C, Q, Cmask, Qmask):
-        C = C.transpose(1, 2) # after transpose (bs, ctxt_len, d_model)
-        Q = Q.transpose(1, 2)# after transpose (bs, ques_len, d_model)
-        batch_size = C.shape[0]
-        Lc, Lq = C.shape[1], Q.shape[1]
-        S = self.trilinear_for_attention(C, Q)
-        Cmask = Cmask.view(batch_size, Lc, 1)
-        Qmask = Qmask.view(batch_size, 1, Lq)
-        S1 = F.softmax(mask_logits(S, Qmask), dim=2)
-        S2 = F.softmax(mask_logits(S, Cmask), dim=1)
-        # (bs, ctxt_len, ques_len) x (bs, ques_len, d_model) => (bs, ctxt_len, d_model)
-        A = torch.bmm(S1, Q)
-        # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
-        B = torch.bmm(torch.bmm(S1, S2.transpose(1, 2)), C)
-        out = torch.cat([C, A, torch.mul(C, A), torch.mul(C, B)], dim=2) # (bs, ctxt_len, 4 * d_model)
-        return out.transpose(1, 2)
-
-    def trilinear_for_attention(self, C, Q):
-        C = F.dropout(C, p=dropout, training=self.training)
-        Q = F.dropout(Q, p=dropout, training=self.training)
-        Lc, Lq = C.shape[1], Q.shape[1]
-        subres0 = torch.matmul(C, self.w4C).expand([-1, -1, Lq])
-        subres1 = torch.matmul(Q, self.w4Q).transpose(1, 2).expand([-1, Lc, -1])
-        subres2 = torch.matmul(C * self.w4mlu, Q.transpose(1,2))
-        # print('qanet_modules', subres0.shape, subres1.shape, subres2.shape)
-        res = subres0 + subres1 + subres2
-        res += self.bias
-        return res
-
 
 class Pointer(nn.Module):
     def __init__(self):
         super().__init__()
-        self.w1 = Initialized_Conv1d(D*2, 1)
-        self.w2 = Initialized_Conv1d(D*2, 1)
+        self.w1 = initializing_convolutional_oneD_layer( 128*2, 1)
+        self.w2 = initializing_convolutional_oneD_layer( 128*2, 1)
 
     def forward(self, M1, M2, M3, mask):
         X1 = torch.cat([M1, M2], dim=1)
@@ -486,8 +450,8 @@ class Pointer(nn.Module):
         Y1 = mask_logits(self.w1(X1).squeeze(), mask)
         Y2 = mask_logits(self.w2(X2).squeeze(), mask)
         # print(Y1[0])
-        p1 = F.log_softmax(Y1, dim=1)
-        p2 = F.log_softmax(Y2, dim=1)
+        p1 = nn.functional.log_softmax(Y1, dim=1)
+        p2 = nn.functional.log_softmax(Y2, dim=1)
         return p1, p2
 
 
@@ -530,3 +494,34 @@ class Pointer(nn.Module):
 #
 #        return log_p1, log_p2
 
+
+
+def mask_logits(inputs, mask):
+    mask = mask.type(torch.float32)
+    return inputs + (-1e30) * (1 - mask)
+#A positional encoding is added to the input at the beginning of each encoder layer consisting of sin and cos functions at varying wavelengths,
+# as defined in (Vaswani et al., 2017a). Each sub-layer after the positional encoding (one of convolution, self-attention, or feed-forward-net)
+# inside the encoder structure is wrapped inside a residual block. (Page 3 of the paper).
+def PosEncoder(x, min_timescale=1.0, max_timescale=1.0e4):
+    x = x.transpose(1, 2)
+    length, channels = x.shape[1], x.shape[2]
+    signal = get_timing_signal(length, channels, min_timescale, max_timescale)
+    if torch.cuda.is_available():
+        signal = signal.cuda()
+    return (x + signal).transpose(1,2)
+
+
+def get_timing_signal(length, channels, min_timescale=1.0, max_timescale=1.0e4):
+    position = torch.arange(length).type(torch.float32)
+    num_timescales = channels // 2
+    log_timescale_increment = (
+        math.log(float(max_timescale) / float(min_timescale)) / (float(num_timescales)-1)
+    )
+    inv_timescales = min_timescale * torch.exp(
+        torch.arange(num_timescales).type(torch.float32) * -log_timescale_increment)
+    scaled_time = position.unsqueeze(1) * inv_timescales.unsqueeze(0)
+    signal = torch.cat([torch.sin(scaled_time), torch.cos(scaled_time)], dim = 1)
+    m = nn.ZeroPad2d((0, (channels % 2), 0, 0))
+    signal = m(signal)
+    signal = signal.view(1, length, channels)
+    return signal

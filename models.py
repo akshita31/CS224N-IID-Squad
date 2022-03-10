@@ -171,7 +171,7 @@ class QANet(nn.Module):
     def __init__(self, word_mat, char_mat, n_encoder_blocks=7, n_head=4):
         super().__init__()
         #Dimension of connectors in QANet. #same as the d_model
-        D = layers_qanet.D
+        D = 128
         self.Lc = None
         self.Lq = None
         self.n_model_enc_blks = n_encoder_blocks
@@ -199,11 +199,10 @@ class QANet(nn.Module):
         # self.d_model = 128 # d model is the dimensionality of each word before and after it goes into the encoder layer, i
         # self.num_conv_filters = 128
         self.word_emb = nn.Embedding.from_pretrained(torch.Tensor(word_mat), freeze=True)
-        self.emb = layers_qanet.Embedding()
-        self.emb_enc = layers_qanet.EncoderBlock(
-            conv_num=4, ch_num=D, k=7, n_head=n_head)
-        self.cq_att = layers_qanet.CQAttention()
-        self.cq_resizer = layers_qanet.Initialized_Conv1d(4 * D, D)
+        self.emb = layers_qanet.the_embedding_layer()
+        self.emb_enc = layers_qanet.the_encoder_block_layer(4, D, 7, n_head)
+        self.cq_att = layers_qanet.the_context_query_attention_layer()
+        self.cq_resizer = layers_qanet.initializing_convolutional_oneD_layer(4 * D, D)
         #         self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(d_model=self.d_model,
         #                                                                 num_filters=self.num_conv_filters,
         #                                                                 kernel_size=5,
@@ -212,7 +211,7 @@ class QANet(nn.Module):
         #                                                                 drop_prob=drop_prob) for _ in range(5)])
         #         self.out = layers_qanet.QANetOutput(d_model=self.d_model, drop_prob=drop_prob)
         self.model_enc_blks = nn.ModuleList([
-            layers_qanet.EncoderBlock(conv_num=2, ch_num=D, k=5, n_head=n_head)
+            layers_qanet.the_encoder_block_layer(2, D, 5, n_head)
             for _ in range(n_encoder_blocks)
         ])
         self.out = layers_qanet.Pointer()
@@ -277,7 +276,7 @@ class QANet(nn.Module):
         #      m0 = enc(m0)
         #      m1 = m0
         M0 = self.cq_resizer(X) # (bs, d_model, ctxt_len), fusion function
-        M0 = F.dropout(M0, p=train_args.qanet_dropout, training=self.training)
+        M0 = F.dropout(M0, p=0.1, training=self.training)
         # for i, enc in enumerate(self.model_encoders):
         #      m0 = enc(m0)
         #m2 = m0
@@ -287,7 +286,7 @@ class QANet(nn.Module):
         for i, blk in enumerate(self.model_enc_blks):
              M0 = blk(M0, maskC, i*(2+2)+1, self.n_model_enc_blks)
         M2 = M0
-        M0 = F.dropout(M0, p=train_args.qanet_dropout, training=self.training)
+        M0 = F.dropout(M0, p=0.1, training=self.training)
         for i, blk in enumerate(self.model_enc_blks):
              M0 = blk(M0, maskC, i*(2+2)+1, self.n_model_enc_blks)
         M3 = M0

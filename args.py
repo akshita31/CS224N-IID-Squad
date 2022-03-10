@@ -150,14 +150,10 @@ def get_train_args():
                         type=int,
                         default=8,
                         help='Number of attention heads in QANet.')
-    parser.add_argument('--d_model',
-                        type=int,
-                        default=128,
-                        help='Dimension of connectors in QANet.')
-    parser.add_argument('--qanet_dropout',
-                        type=float,
-                        default=0.1,
-                        help='Probability of zeroing an activation in dropout layers.')
+    # parser.add_argument('--d_model',
+    #                     type=int,
+    #                     default=128,
+    #                     help='Dimension of connectors in QANet.')
     parser.add_argument('--qanet_char_dropout',
                         type=float,
                         default=0.05,
