@@ -113,9 +113,9 @@ class BiDAFAttention(nn.Module):
         super(BiDAFAttention, self).__init__()
         print('Using BiDAF attention')
         self.drop_prob = drop_prob
-        self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
-        self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
-        self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
+        self.c_weight = nn.Parameter(torch.empty(hidden_size, 1))
+        self.q_weight = nn.Parameter(torch.empty(hidden_size, 1))
+        self.cq_weight = nn.Parameter(torch.empty(1, 1, hidden_size))
         for weight in (self.c_weight, self.q_weight, self.cq_weight):
             nn.init.xavier_uniform_(weight)
         

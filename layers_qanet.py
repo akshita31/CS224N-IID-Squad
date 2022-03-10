@@ -461,7 +461,8 @@ class CQAttention(nn.Module):
         # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
         B = torch.bmm(torch.bmm(S1, S2.transpose(1, 2)), C)
         out = torch.cat([C, A, torch.mul(C, A), torch.mul(C, B)], dim=2) # (bs, ctxt_len, 4 * d_model)
-        return out.transpose(1, 2)
+        out =  out.transpose(1, 2)
+        return out
 
     def trilinear_for_attention(self, C, Q):
         C = F.dropout(C, p=dropout, training=self.training)
@@ -473,6 +474,7 @@ class CQAttention(nn.Module):
         # print('qanet_modules', subres0.shape, subres1.shape, subres2.shape)
         res = subres0 + subres1 + subres2
         res += self.bias
+        return res
 
 
 class QANetOutput(nn.Module):
