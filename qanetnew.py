@@ -53,7 +53,7 @@ class QANetNew(nn.Module):
             for _ in range(n_encoder_blocks)
         ])
 
-        self.out = layers_qanet.QANetConditionalOutput(D)
+        self.out = layers_qanet.QANetConditionalOutput2(D)
 
     def forward(self, Cwid, Qwid, Ccid, Qcid):
         train_args = args.get_train_args()
@@ -90,5 +90,5 @@ class QANetNew(nn.Module):
         #     m0 = enc(m0)
         #     m3 = m0
         #
-        out = self.out(M1, M2, M3, maskC)
+        out = self.out(M1, M2, M3, X, maskC)
         return out
