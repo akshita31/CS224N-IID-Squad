@@ -22,6 +22,7 @@ from args import get_test_args
 from collections import OrderedDict
 from json import dumps
 from models import BiDAF, BiDAFWithChar, QANet
+from qanetnew import QANetNew
 from os.path import join
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -53,6 +54,11 @@ def main(args):
                 char_vectors = char_vectors,
                 hidden_size=args.hidden_size,
                 device=device)
+    elif "qanetnew" in args.name:
+        model = QANetNew(word_mat=word_vectors,
+                      char_mat=char_vectors,
+                      n_encoder_blocks=args.n_encoder_blocks,
+                      n_head=args.n_head)
     elif "qanet" in args.name:
         model = QANet(word_mat=word_vectors,
                       char_mat=char_vectors,
