@@ -148,6 +148,14 @@ def get_train_args():
                         type=int,
                         default=7,
                         help='Number of layers of encoder blocks in QANet.')
+    parser.add_argument('--num_encoder_conv',
+                        type=int,
+                        default=4,
+                        help='Number of Conv layers in Encoder Blocks.')
+    parser.add_argument('--num_model_conv',
+                        type=int,
+                        default=2,
+                        help='Number of Conv layers in Model Blocks.')
     parser.add_argument('--n_head',
                         type=int,
                         default=8,
@@ -225,6 +233,14 @@ def get_test_args():
                         type=int,
                         default=8,
                         help='Number of attention heads in QANet.')
+    parser.add_argument('--num_encoder_conv',
+                        type=int,
+                        default=4,
+                        help='Number of Conv layers in Encoder Blocks.')
+    parser.add_argument('--num_model_conv',
+                        type=int,
+                        default=2,
+                        help='Number of Conv layers in Model Blocks.')
 
     # Require load_path for test.py
     args = parser.parse_args()

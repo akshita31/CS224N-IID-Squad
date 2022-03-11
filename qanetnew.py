@@ -38,18 +38,12 @@ class QANetNew(nn.Module):
         self.embedding = layersnew.QANetEmbedding(word_mat, char_mat, D, drop_prob=layers_qanet.dropout, drop_char = layers_qanet.dropout_char, num_filters=100)
         
         self.emb_enc = layers_qanet.EncoderBlock(
-            conv_num=4, ch_num=D, k=7, n_head=n_head)
+            conv_num=train_args.num_encoder_conv, ch_num=D, k=7, n_head=n_head)
         self.attention = layersnew.BiDAFAttention(hidden_size=D, drop_prob=layers_qanet.dropout)       
         self.cq_resizer = layers_qanet.Initialized_Conv1d(4 * D, D)
-        #         self.model_encoders =  nn.ModuleList([layers_qanet.Encoder(d_model=self.d_model,
-        #                                                                 num_filters=self.num_conv_filters,
-        #                                                                 kernel_size=5,
-        #                                                                 num_conv_layers=2,
-        #                                                                 num_heads=8,
-        #                                                                 drop_prob=drop_prob) for _ in range(5)])
-        #         self.out = layers_qanet.QANetOutput(d_model=self.d_model, drop_prob=drop_prob)
+
         self.model_enc_blks = nn.ModuleList([
-            layers_qanet.EncoderBlock(conv_num=2, ch_num=D, k=5, n_head=n_head)
+            layers_qanet.EncoderBlock(conv_num=train_args.num_model_conv, ch_num=D, k=5, n_head=n_head)
             for _ in range(n_encoder_blocks)
         ])
 
