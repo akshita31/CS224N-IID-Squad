@@ -12,6 +12,7 @@ Dchar = train_args.char_dim
 D = train_args.d_model
 dropout = train_args.qanet_dropout
 dropout_char = train_args.qanet_char_dropout
+char_embed_dim = train_args.char_embed_dim
 
 
 def mask_logits(inputs, mask):

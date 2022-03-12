@@ -16,7 +16,7 @@ class _CharEmbedding(nn.Module):
         num_filters: dimension of the output embeddings for each word.
     """
 
-    def __init__(self, char_vectors, d_model, drop_char, drop_prob, num_filters) -> None:
+    def __init__(self, char_vectors, d_model, drop_char, drop_prob, char_embed_dim) -> None:
         super(_CharEmbedding, self).__init__()
         train_args = args.get_train_args()
         if train_args.use_pretrained_char:
@@ -27,11 +27,11 @@ class _CharEmbedding(nn.Module):
             self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze = False) #output will be (batch_size, seq_length, chars_per_word, input_embedding_len)
         self.input_char_emb_size = char_vectors.size(1)
         self.drop_char = drop_char
-        self.num_filters = num_filters
         self.drop_prob = drop_prob
         self.d_model = d_model
+        self.output_char_embed_dim = char_embed_dim
 
-        self.conv2d = nn.Conv2d(self.input_char_emb_size, d_model, kernel_size=(1,5), padding=0, bias=True)
+        self.conv2d = nn.Conv2d(self.input_char_emb_size, char_embed_dim, kernel_size=(1,5), padding=0, bias=True)
         nn.init.kaiming_normal_(self.conv2d.weight, nonlinearity='relu')
 
     def forward(self, char_idxs):
@@ -51,14 +51,14 @@ class _CharEmbedding(nn.Module):
         return emb
 
     def GetCharEmbedDim(self):
-        return self.d_model
+        return self.output_char_embed_dim
 
 class QANetEmbedding(nn.Module):
    """Combines the Word and Character embedding and then applies a transformation and highway network.
    Output of this layer will be (batch_size, seq_len, hidden_size)
    """
 
-   def __init__(self, word_vectors, char_vectors, d_model, drop_prob, drop_char, num_filters):
+   def __init__(self, word_vectors, char_vectors, d_model, drop_prob, drop_char, char_embed_dim):
        super(QANetEmbedding, self).__init__()
        self.drop_prob = drop_prob
        self.word_embed_size = word_vectors.size(1)
@@ -66,7 +66,7 @@ class QANetEmbedding(nn.Module):
        self.d_model = d_model
 
        self.word_embed = nn.Embedding.from_pretrained(word_vectors)
-       self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, d_model = d_model, num_filters = num_filters, drop_char=drop_char)
+       self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, d_model = d_model, char_embed_dim=char_embed_dim, drop_char=drop_char)
        self.char_embed_dim = self.char_embed.GetCharEmbedDim()
        self.resizer = Initialized_Conv1d(self.word_embed_size + self.char_embed_dim, d_model, bias=False)
        self.hwy = Highway(2, d_model)

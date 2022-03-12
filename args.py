@@ -187,7 +187,11 @@ def get_train_args():
     parser.add_argument('--char_dim',
                         type=int,
                         default=64,
-                        help='Size of char vectors (char-level embeddings)')
+                        help='Size of pretrained char vectors (char-level embeddings)')
+    parser.add_argument('--char_embed_dim',
+                        type=int,
+                        default=128,
+                        help='Size of output char embeddings')
     parser.add_argument('--split',
                         type=str,
                         default='dev',

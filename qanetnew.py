@@ -35,7 +35,7 @@ class QANetNew(nn.Module):
         D = layers_qanet.D
         self.n_model_enc_blks = n_encoder_blocks
         train_args = args.get_train_args()
-        self.embedding = layersnew.QANetEmbedding(word_mat, char_mat, D, drop_prob=layers_qanet.dropout, drop_char = layers_qanet.dropout_char, num_filters=100)
+        self.embedding = layersnew.QANetEmbedding(word_mat, char_mat, D, drop_prob=layers_qanet.dropout, drop_char = layers_qanet.dropout_char, char_embed_dim=layers_qanet.char_embed_dim)
         
         self.emb_enc = layers_qanet.EncoderBlock(
             conv_num=train_args.num_encoder_conv, ch_num=D, k=7, n_head=n_head)
