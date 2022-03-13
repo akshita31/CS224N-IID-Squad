@@ -47,7 +47,10 @@ class QANetNew(nn.Module):
             for _ in range(n_encoder_blocks)
         ])
 
-        self.out = layers_qanet.QANetConditionalOutput2(D)
+        if train_args.output_type == 'default':
+            self.out = layers_qanet.QANetOutput(D)
+        elif train_args.output_type == 'conditional_attention':
+            self.out = layers_qanet.QANetConditionalOutput2(D)
 
     def forward(self, Cwid, Qwid, Ccid, Qcid):
         train_args = args.get_train_args()
@@ -84,5 +87,8 @@ class QANetNew(nn.Module):
         #     m0 = enc(m0)
         #     m3 = m0
         #
-        out = self.out(M1, M2, M3, X, maskC)
+        if train_args.output_type == 'default':
+            out = self.out(M1, M2, M3, maskC)
+        elif train_args.output_type == 'conditional_attention':
+            out = self.out(M1, M2, M3, X, maskC)    
         return out

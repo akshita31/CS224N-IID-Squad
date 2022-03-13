@@ -197,7 +197,10 @@ def get_train_args():
                         default='dev',
                         choices=('train', 'dev', 'test'),
                         help='Split to use for testing.')
-
+    parser.add_argument('--output_type',
+                        type=str,
+                        default='default',
+                        help='Type of the Output to use')
     args = parser.parse_args()
 
     if args.metric_name == 'NLL':
