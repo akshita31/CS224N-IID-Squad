@@ -160,7 +160,8 @@ def main(args_list, f1_scores, ensemble_method='weighted_avg'):
     for args_model in args_list:
         # Get model
         print(args_model)
-        model = getModel(word_vectors, 
+        word_vectors2 = torch.rand((args_model.n_words, 300))
+        model = getModel(word_vectors2, 
                     char_vectors,
                     char_embed_dim = args_model.char_embed_dim,
                     n_encoder_blocks= args_model.n_encoder_blocks,
@@ -297,6 +298,7 @@ if __name__ == '__main__':
             args.n_head = 4
             args.char_embed_dim = 200
             args.output_type = 'conditional_attention'
+            args.n_words = 88714
         #     args.use_char_emb = True
         #     args.use_attention = True
         #     args.use_dynamic_decoder = False
@@ -317,6 +319,6 @@ if __name__ == '__main__':
             
         args_list.append(args)
 
-    # args_list = args_list[:3]
-    # f1_scores = f1_scores[:3]
-    main(args_list, f1_scores=f1_scores, ensemble_method='majority_voting', n_words) # majority_voting
+    args_list =[args_list[i] for i in [1]]
+    f1_scores =[f1_scores[i] for i in [1]]
+    main(args_list, f1_scores=f1_scores, ensemble_method='majority_voting') # majority_voting

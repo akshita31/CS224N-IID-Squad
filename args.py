@@ -260,7 +260,7 @@ def get_test_args():
     parser.add_argument('--use_bidaf_att',
                         type=bool,
                         default=True,
-                        help='Whether or not to use bidaf attention')
+                        help='Whether or not to use bidaf')
 
     # Require load_path for test.py
     args = parser.parse_args()
@@ -340,4 +340,7 @@ def add_train_test_args(parser):
                         type=str,
                         default=None,
                         help='Path to load as a model checkpoint.')
-                        
+    parser.add_argument('--n_words',
+                        type=str,
+                        default=88430,
+                        help='Path to load as a model checkpoint.')

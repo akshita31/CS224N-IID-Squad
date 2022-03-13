@@ -58,7 +58,9 @@ def main(args):
         model = QANetNew(word_mat=word_vectors,
                       char_mat=char_vectors,
                       n_encoder_blocks=args.n_encoder_blocks,
-                      n_head=args.n_head)
+                      n_head=args.n_head,
+                      char_embed_dim=args.char_embed_dim,
+                      output_type=args.output_type)
     elif "qanet" in args.name:
         model = QANet(word_mat=word_vectors,
                       char_mat=char_vectors,
