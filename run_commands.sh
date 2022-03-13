@@ -1,0 +1,1 @@
+python test.py --split dev --load_path /home/shafatrahman/saved_results/qanetnew-conditional-attention-01/best.pth.tar  --name qanetnew --n_encoder_blocks 5 --n_head 4 --char_embed_dim 128 --output_type 'conditional_attention' 

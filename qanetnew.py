@@ -93,13 +93,6 @@ class QANetNew(nn.Module):
             out = self.out(M1, M2, M3, X, maskC)    
         return out
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import layers_qanet
-import layersnew
-import args
-
 class QANetNew1(nn.Module):
     """"
     Based on two papers:
@@ -158,6 +151,8 @@ class QANetNew1(nn.Module):
         #print(self.output_type)
         if output_type == 'default':
             self.out = layers_qanet.QANetOutput(D)
+        elif output_type == 'conditional_output':
+            self.out = layers_qanet.QANetConditionalOutput(D)
         elif output_type == 'conditional_attention':
             self.out = layers_qanet.QANetConditionalOutput2(D)
 
@@ -200,7 +195,7 @@ class QANetNew1(nn.Module):
         #     m0 = enc(m0)
         #     m3 = m0
         #
-        if self.output_type == 'default':
+        if self.output_type == 'default' or self.output_type == 'conditional_output':
             out = self.out(M1, M2, M3, maskC)
         elif self.output_type == 'conditional_attention':
             out = self.out(M1, M2, M3, X, maskC)    

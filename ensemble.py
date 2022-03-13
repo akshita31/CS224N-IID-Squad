@@ -8,7 +8,7 @@ import util
 from args import get_test_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF
+from models import BiDAF, QANet
 from os.path import join
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -25,14 +25,24 @@ def getModel(word_vectors,
             n_encoder_blocks,
             n_head,
             output_type,
+            use_bidaf_att,
+            use_old_model,
             log):
     log.info('Building model...')
-    model = QANetNew1(word_mat=word_vectors,
+
+    if use_old_model:
+        model = QANet(word_mat=word_vectors, 
+        char_mat=char_vectors, 
+        n_encoder_blocks=n_encoder_blocks,
+        n_head = n_head)
+    else:
+        model = QANetNew1(word_mat=word_vectors,
                       char_mat=char_vectors,
                       char_embed_dim = char_embed_dim,
                       n_encoder_blocks=n_encoder_blocks,
                       n_head=n_head,
-                      output_type=output_type)
+                      output_type=output_type,
+                      use_bidaf_att=use_bidaf_att)
     return model
 
 def weighted_avg(log_p1_models, log_p2_models, weights, args):
@@ -86,14 +96,17 @@ def majority_voting(log_p1_models, log_p2_models, weights, args):
         preds_i = preds[i] # (n_models, 2)
         # print(preds_i)        
         sorted_ct_tuples = Counter(preds_i).most_common()
-        # max_freq = sorted_ct_tuples[0][1]
-        # ans_choices = [span for span,ct in sorted_ct_tuples if ct == max_freq]
-        # ans = random.choice(ans_choices)
-        # ans_starts.append(ans[0])
-        # ans_ends.append(ans[1])
         
-        ans_starts.append(sorted_ct_tuples[0][0][0])
-        ans_ends.append(sorted_ct_tuples[0][0][1])
+        # ans_starts.append(sorted_ct_tuples[0][0][0])
+        # ans_ends.append(sorted_ct_tuples[0][0][1])
+
+        max_freq = sorted_ct_tuples[0][1]
+        ans_choices = [span for span,ct in sorted_ct_tuples if ct == max_freq]
+        ans = random.choice(ans_choices)
+        ans_starts.append(ans[0])
+        ans_ends.append(ans[1])
+        
+        
 
 
     # print("answers computed")
@@ -167,6 +180,8 @@ def main(args_list, f1_scores, ensemble_method='weighted_avg'):
                     n_encoder_blocks= args_model.n_encoder_blocks,
                     n_head= args_model.n_head,
                     output_type= args_model.output_type,
+                    use_bidaf_att=args_model.use_bidaf_att,
+                    use_old_model = args_model.use_old_model,
                     log=log)
 
         model = nn.DataParallel(model, gpu_ids)
@@ -277,9 +292,11 @@ def main(args_list, f1_scores, ensemble_method='weighted_avg'):
 
 if __name__ == '__main__':
     checkpoints = ["/home/shafatrahman/saved_results/qanetnew-conditional-attention-01/best.pth.tar",
-                    "/home/shafatrahman/saved_results/qanet-ConditionalAttention-CharEmbed-200/best.pth.tar"]
+                    "/home/shafatrahman/saved_results/qanetnew-conditional-output-1/best.pth.tar",
+                    "/home/shafatrahman/saved_results/qanet-8-Att-7-encoder-blocks-1/best.pth.tar",
+                    "/home/shafatrahman/saved_results/qanet-4-Att-7-encoder-blocks/best.pth.tar"]
 
-    f1_scores=[0.6737, 0.6774]
+    f1_scores=[68.62, 67.09, 67.95, 68.38 ]
 
     num_models = len(checkpoints)
     args_list = []
@@ -294,11 +311,24 @@ if __name__ == '__main__':
             args.char_embed_dim = 128
             args.output_type = 'conditional_attention'
         elif i == 1:
-            args.n_encoder_blocks = 5
+            args.n_encoder_blocks = 7
+            args.n_head = 8
+            args.char_embed_dim = 128
+            args.output_type = 'conditional_output'
+        elif i == 2:
+            args.n_encoder_blocks = 7
+            args.n_head = 8
+            args.char_embed_dim = 128
+            args.output_type = 'default'
+            args.use_bidaf_att = False
+            args.use_old_model = True
+        elif i == 3:
+            args.n_encoder_blocks = 7
             args.n_head = 4
-            args.char_embed_dim = 200
-            args.output_type = 'conditional_attention'
-            args.n_words = 88714
+            args.char_embed_dim = 128
+            args.output_type = 'default'
+            args.use_bidaf_att = False
+            #args.n_words = 88714
         #     args.use_char_emb = True
         #     args.use_attention = True
         #     args.use_dynamic_decoder = False
@@ -319,6 +349,8 @@ if __name__ == '__main__':
             
         args_list.append(args)
 
-    args_list =[args_list[i] for i in [1]]
-    f1_scores =[f1_scores[i] for i in [1]]
-    main(args_list, f1_scores=f1_scores, ensemble_method='majority_voting') # majority_voting
+    #args_list =[args_list[i] for i in [1]]
+    #f1_scores =[f1_scores[i] for i in [1]]
+    # ensemble_method ='weighted_avg' 
+    ensemble_method = 'majority_voting'
+    main(args_list, f1_scores=f1_scores, ensemble_method=ensemble_method) # majority_voting

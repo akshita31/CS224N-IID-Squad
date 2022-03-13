@@ -261,6 +261,10 @@ def get_test_args():
                         type=bool,
                         default=True,
                         help='Whether or not to use bidaf')
+    parser.add_argument('--use_old_model',
+                        type=bool,
+                        default=False,
+                        help='Whether or not to use the old qanet model')
 
     # Require load_path for test.py
     args = parser.parse_args()
