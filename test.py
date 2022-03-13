@@ -28,7 +28,7 @@ from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
 from util import collate_fn, SQuAD
-
+import pprint
 
 def main(args):
     # Set up logging
@@ -132,7 +132,12 @@ def main(args):
 
     # Log results (except for test set, since it does not come with labels)
     if args.split != 'test':
-        results = util.eval_dicts(gold_dict, pred_dict, args.use_squad_v2)
+        if args.gen_metrics:
+            results, metrics = util.eval_dicts_with_breakdown(gold_dict, pred_dict, args.use_squad_v2)
+            pprint.pprint(metrics)
+        else:
+            results = util.eval_dicts(gold_dict, pred_dict, args.use_squad_v2)
+
         results_list = [('NLL', nll_meter.avg),
                         ('F1', results['F1']),
                         ('EM', results['EM'])]

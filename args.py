@@ -265,6 +265,10 @@ def get_test_args():
                         type=bool,
                         default=False,
                         help='Whether or not to use the old qanet model')
+    parser.add_argument('--gen_metrics',
+                        type=lambda s: s.lower().startswith('t'),
+                        default=True,
+                        help='Generate score metrics based on question type')
 
     # Require load_path for test.py
     args = parser.parse_args()
