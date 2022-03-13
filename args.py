@@ -346,5 +346,5 @@ def add_train_test_args(parser):
                         help='Path to load as a model checkpoint.')
     parser.add_argument('--n_words',
                         type=str,
-                        default=88430,
+                        default=88714,
                         help='Path to load as a model checkpoint.')

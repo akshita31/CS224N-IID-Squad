@@ -29,21 +29,20 @@ class QANetNew(nn.Module):
         n_head: The number of head of the attention mechanmism.
     """
     
-    def __init__(self, word_mat, char_mat, char_embed_dim = 128, n_encoder_blocks=7, n_head=4, output_type= 'default'):
+    def __init__(self, word_mat, char_mat, char_embed_dim = 128, n_encoder_blocks=7, n_head=4, num_encoder_conv = 4, num_model_conv = 2,output_type= 'default'):
         super().__init__()
         #Dimension of connectors in QANet. #same as the d_model
         D = layers_qanet.D
         self.n_model_enc_blks = n_encoder_blocks
-        train_args = args.get_train_args()
         self.embedding = layersnew.QANetEmbedding(word_mat, char_mat, D, drop_prob=layers_qanet.dropout, drop_char = layers_qanet.dropout_char, char_embed_dim=char_embed_dim)
         
         self.emb_enc = layers_qanet.EncoderBlock(
-            conv_num=train_args.num_encoder_conv, ch_num=D, k=7, n_head=n_head)
+            conv_num=num_encoder_conv, ch_num=D, k=7, n_head=n_head)
         self.attention = layersnew.BiDAFAttention(hidden_size=D, drop_prob=layers_qanet.dropout)       
         self.cq_resizer = layers_qanet.Initialized_Conv1d(4 * D, D)
 
         self.model_enc_blks = nn.ModuleList([
-            layers_qanet.EncoderBlock(conv_num=train_args.num_model_conv, ch_num=D, k=5, n_head=n_head)
+            layers_qanet.EncoderBlock(conv_num=num_model_conv, ch_num=D, k=5, n_head=n_head)
             for _ in range(n_encoder_blocks)
         ])
 
@@ -117,24 +116,17 @@ class QANetNew1(nn.Module):
         n_head: The number of head of the attention mechanmism.
     """
     
-    def __init__(self, 
-                word_mat, char_mat, 
-                char_embed_dim = 128, 
-                n_encoder_blocks=7, 
-                n_head=4, 
-                output_type= 'default', 
-                use_bidaf_att = True):
+    def __init__(self, word_mat, char_mat, char_embed_dim = 128, n_encoder_blocks=7, n_head=4, num_encoder_conv = 4, num_model_conv = 2,output_type= 'default', use_bidaf_att = True):
                 
         super().__init__()
         #Dimension of connectors in QANet. #same as the d_model
         D = layers_qanet.D
         self.n_model_enc_blks = n_encoder_blocks
-        train_args = args.get_train_args()
         self.use_bidaf_att = use_bidaf_att
         self.embedding = layersnew.QANetEmbedding(word_mat, char_mat, D, drop_prob=layers_qanet.dropout, drop_char = layers_qanet.dropout_char, char_embed_dim=char_embed_dim)
         self.output_type = output_type
         self.emb_enc = layers_qanet.EncoderBlock(
-            conv_num=train_args.num_encoder_conv, ch_num=D, k=7, n_head=n_head)
+            conv_num=num_encoder_conv, ch_num=D, k=7, n_head=n_head)
         
         if use_bidaf_att:
             self.attention = layersnew.BiDAFAttention(hidden_size=D, drop_prob=layers_qanet.dropout) 
@@ -144,7 +136,7 @@ class QANetNew1(nn.Module):
         self.cq_resizer = layers_qanet.Initialized_Conv1d(4 * D, D)
 
         self.model_enc_blks = nn.ModuleList([
-            layers_qanet.EncoderBlock(conv_num=train_args.num_model_conv, ch_num=D, k=5, n_head=n_head)
+            layers_qanet.EncoderBlock(conv_num=num_model_conv, ch_num=D, k=5, n_head=n_head)
             for _ in range(n_encoder_blocks)
         ])
 
