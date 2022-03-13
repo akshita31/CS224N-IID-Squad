@@ -59,7 +59,7 @@ def weighted_avg(log_p1_models, log_p2_models, weights, args):
     return starts, ends
 
 def majority_voting(log_p1_models, log_p2_models, weights, args):
-    print('using majority voting ensemble')
+    #print('using majority voting ensemble')
 
     n_models = log_p1_models.shape[0]
     batch_size = log_p1_models.shape[1]
@@ -275,8 +275,8 @@ def main(args_list, f1_scores, ensemble_method='weighted_avg'):
 
 
 if __name__ == '__main__':
-    checkpoints = ["/home/shafatrahman/saved_results/qanetnew-conditional-attention-01/best.pth.tar"
-                  ]
+    checkpoints = ["/home/shafatrahman/saved_results/qanetnew-conditional-attention-01/best.pth.tar",
+                    "/home/shafatrahman/saved_results/qanet-ConditionalAttention-CharEmbed-200/best.pth.tar"]
 
     f1_scores=[0.6737, 0.6774]
 
@@ -292,7 +292,11 @@ if __name__ == '__main__':
             args.n_head = 4
             args.char_embed_dim = 128
             args.output_type = 'conditional_attention'
-        # elif i == 1:
+        elif i == 1:
+            args.n_encoder_blocks = 5
+            args.n_head = 4
+            args.char_embed_dim = 200
+            args.output_type = 'conditional_attention'
         #     args.use_char_emb = True
         #     args.use_attention = True
         #     args.use_dynamic_decoder = False
@@ -315,4 +319,4 @@ if __name__ == '__main__':
 
     # args_list = args_list[:3]
     # f1_scores = f1_scores[:3]
-    main(args_list, f1_scores=f1_scores, ensemble_method='majority_voting') # majority_voting
+    main(args_list, f1_scores=f1_scores, ensemble_method='majority_voting', n_words) # majority_voting

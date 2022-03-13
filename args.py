@@ -257,6 +257,11 @@ def get_test_args():
                         default='default',
                         help='Type of the Output to use')
 
+    parser.add_argument('--use_bidaf_att',
+                        type=bool,
+                        default=True,
+                        help='Whether or not to use bidaf attention')
+
     # Require load_path for test.py
     args = parser.parse_args()
     if not args.load_path:
@@ -335,3 +340,4 @@ def add_train_test_args(parser):
                         type=str,
                         default=None,
                         help='Path to load as a model checkpoint.')
+                        

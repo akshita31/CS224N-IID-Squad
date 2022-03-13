@@ -124,7 +124,14 @@ class QANetNew1(nn.Module):
         n_head: The number of head of the attention mechanmism.
     """
     
-    def __init__(self, word_mat, char_mat, char_embed_dim = 128, n_encoder_blocks=7, n_head=4, output_type= 'default', use_bidaf_att = True):
+    def __init__(self, 
+                word_mat, char_mat, 
+                char_embed_dim = 128, 
+                n_encoder_blocks=7, 
+                n_head=4, 
+                output_type= 'default', 
+                use_bidaf_att = True):
+                
         super().__init__()
         #Dimension of connectors in QANet. #same as the d_model
         D = layers_qanet.D
@@ -148,7 +155,7 @@ class QANetNew1(nn.Module):
             for _ in range(n_encoder_blocks)
         ])
 
-        print(self.output_type)
+        #print(self.output_type)
         if output_type == 'default':
             self.out = layers_qanet.QANetOutput(D)
         elif output_type == 'conditional_attention':
