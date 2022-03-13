@@ -248,6 +248,14 @@ def get_test_args():
                         type=int,
                         default=2,
                         help='Number of Conv layers in Model Blocks.')
+    parser.add_argument('--char_embed_dim',
+                        type=int,
+                        default=128,
+                        help='Size of output char embeddings')
+    parser.add_argument('--output_type',
+                        type=str,
+                        default='default',
+                        help='Type of the Output to use')
 
     # Require load_path for test.py
     args = parser.parse_args()
