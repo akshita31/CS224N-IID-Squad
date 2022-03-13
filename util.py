@@ -671,6 +671,59 @@ def eval_dicts(gold_dict, pred_dict, no_answer):
 
     return eval_dict
 
+def countQuestionTokens(gold_dict):
+    question_tokens = ["Who", "What", "When", "Where", "Why", "How"] # + "Other"
+    other_token  = "Other"
+    tokenCounts = {token: {"count":0, "EM":0, "F1":0, "AvNA":0} for token in question_tokens + [other_token]}
+    uuidToQuestToken = {}
+
+    for id in gold_dict.keys():
+        token = gold_dict[id]['question'].split()[0]
+        if token in question_tokens:
+            uuidToQuestToken[gold_dict[id]['uuid']] = token
+            tokenCounts[token]["count"] += 1
+        else:
+            uuidToQuestToken[gold_dict[id]['uuid']] = other_token
+            tokenCounts[other_token]["count"] += 1
+
+    return tokenCounts, uuidToQuestToken
+
+
+def eval_dicts_with_breakdown(gold_dict, pred_dict, no_answer):
+    avna = f1 = em = total = 0
+    metrics, uuidToQuestionToken = countQuestionTokens(gold_dict)
+    for key, value in pred_dict.items():
+        total += 1
+        ground_truths = gold_dict[key]['answers']
+        prediction = value
+        questionType = uuidToQuestionToken[gold_dict[key]['uuid']]
+
+        currEM = metric_max_over_ground_truths(compute_em, prediction, ground_truths)
+        currF1 = metric_max_over_ground_truths(compute_f1, prediction, ground_truths)
+
+        em += currEM
+        f1 += currF1
+        metrics[questionType]['EM'] += currEM
+        metrics[questionType]['F1'] += currEM
+
+        if no_answer:
+            currAvna = compute_avna(prediction, ground_truths)
+            avna += currAvna
+            metrics[questionType]['AvNA'] += currEM
+
+    eval_dict = {'EM': 100. * em / total,
+                 'F1': 100. * f1 / total}
+
+    if no_answer:
+        eval_dict['AvNA'] = 100. * avna / total
+
+    for typ, met in metrics.items():
+        if met["count"]!=0:
+            met["EM"] /= met["count"]
+            met["F1"] /= met["count"]
+            met["AvNA"] /= met["count"]
+
+    return eval_dict, metrics
 
 def compute_avna(prediction, ground_truths):
     """Compute answer vs. no-answer accuracy."""
