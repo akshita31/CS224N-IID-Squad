@@ -29,7 +29,7 @@ class QANetNew(nn.Module):
         n_head: The number of head of the attention mechanmism.
     """
     
-    def __init__(self, word_mat, char_mat, char_embed_dim = 128, n_encoder_blocks=7, n_head=4, num_encoder_conv = 4, num_model_conv = 2,output_type= 'default'):
+    def __init__(self, word_mat, char_mat, char_embed_dim, n_encoder_blocks=7, n_head=4, num_encoder_conv = 4, num_model_conv = 2,output_type= 'default'):
         super().__init__()
         #Dimension of connectors in QANet. #same as the d_model
         D = layers_qanet.D

@@ -62,10 +62,13 @@ def main(args):
         log.info("Training QANet")
         log.info("No. of enocoder blocks is", args.n_encoder_blocks)
         log.info("No. of attention heads is", args.n_head)
+        log.info("CharEmbedding dimension is", args.char_embed_dim)
         model = QANetNew(word_mat=word_vectors,
                       char_mat=char_vectors,
                       n_encoder_blocks=args.n_encoder_blocks,
-                      n_head=args.n_head)
+                      n_head=args.n_head,
+                      char_embed_dim=args.char_embed_dim,
+                      output_type=args.output_type)
     # elif "qanet" in args.name:
     #     log.info('Training QANet')
     #     model = QANet(word_vectors=word_vectors,

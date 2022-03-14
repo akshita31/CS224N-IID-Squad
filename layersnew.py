@@ -30,7 +30,7 @@ class _CharEmbedding(nn.Module):
         self.drop_prob = drop_prob
         self.d_model = d_model
         self.output_char_embed_dim = char_embed_dim
-
+        print('Char embed dim is', char_embed_dim)
         self.conv2d = nn.Conv2d(self.input_char_emb_size, char_embed_dim, kernel_size=(1,5), padding=0, bias=True)
         nn.init.kaiming_normal_(self.conv2d.weight, nonlinearity='relu')
 
