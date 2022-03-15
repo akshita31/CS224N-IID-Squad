@@ -55,40 +55,41 @@ class QANetNew(nn.Module):
 
         self.out = layers_qanet.QANetOutput(D)
 
-    def forward(self, Cwid, Qwid, Ccid, Qcid):
+    # log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
+    def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
         train_args = args.get_train_args()
-        maskC = (torch.zeros_like(Cwid) != Cwid).float()
-        maskQ = (torch.zeros_like(Qwid) != Qwid).float()
+        c_mask = (torch.zeros_like(cw_idxs) != cw_idxs).float()
+        q_mask = (torch.zeros_like(qw_idxs) != qw_idxs).float()
         
-        C = self.embedding(Cwid, Ccid)         # (batch_size, self.d_model, c_len)
-        Q = self.embedding(Qwid, Qcid)         # (batch_size, self.d_model, q_len)
+        c = self.embedding(cw_idxs, cc_idxs)         # (batch_size, self.d_model, c_len)
+        q = self.embedding(qw_idxs, qc_idxs)         # (batch_size, self.d_model, q_len)
         
-        Ce = self.emb_enc(C, maskC, 1, 1) # (bs, d_model, ctxt_len)
-        Qe = self.emb_enc(Q, maskQ, 1, 1) # (bs, d_model, ques_len)
-        X = self.attention(Ce, Qe, maskC, maskQ) # (bs, 4 * d_model, ctxt_len)
+        ce = self.emb_enc(c, c_mask, 1, 1) # (bs, d_model, ctxt_len)
+        qe = self.emb_enc(q, q_mask, 1, 1) # (bs, d_model, ques_len)
+        X = self.attention(ce, qe, c_mask, q_mask) # (bs, 4 * d_model, ctxt_len)
         # att = self.att(c_enc, q_enc, c_mask, q_mask)    # (batch_size, c_len, 4 * d_model)
         # m0 = self.att_conv(att.transpose(1,2)).transpose(1,2)
         # for i, enc in enumerate(self.model_encoders):
         #      m0 = enc(m0)
         #      m1 = m0
-        M0 = self.cq_resizer(X) # (bs, d_model, ctxt_len), fusion function
-        M0 = F.dropout(M0, p=train_args.qanet_dropout, training=self.training)
+        intermediary = self.cq_resizer(X) # (bs, d_model, ctxt_len), fusion function
+        intermediary = F.dropout(intermediary, p=train_args.qanet_dropout, training=self.training)
         # for i, enc in enumerate(self.model_encoders):
         #      m0 = enc(m0)
         #m2 = m0
-        for i, blk in enumerate(self.model_enc_blks):
-             M0 = blk(M0, maskC, i*(2+2)+1, self.n_model_enc_blks)
-        M1 = M0
-        for i, blk in enumerate(self.model_enc_blks):
-             M0 = blk(M0, maskC, i*(2+2)+1, self.n_model_enc_blks)
-        M2 = M0
-        M0 = F.dropout(M0, p=train_args.qanet_dropout, training=self.training)
-        for i, blk in enumerate(self.model_enc_blks):
-             M0 = blk(M0, maskC, i*(2+2)+1, self.n_model_enc_blks)
-        M3 = M0
+        for index, block in enumerate(self.model_enc_blks):
+             intermediary = block(intermediary, c_mask, index*(2+2)+1, self.n_model_enc_blks)
+        intermediary1 = intermediary
+        for index, block in enumerate(self.model_enc_blks):
+             intermediary = block(intermediary, c_mask, index*(2+2)+1, self.n_model_enc_blks)
+        intermediary2 = intermediary
+        intermediary = F.dropout(intermediary, p=train_args.qanet_dropout, training=self.training)
+        for index, block in enumerate(self.model_enc_blks):
+             intermediary = block(intermediary, c_mask, index*(2+2)+1, self.n_model_enc_blks)
+        intermediary3 = intermediary
         # for i, enc in enumerate(self.model_encoders):
         #     m0 = enc(m0)
         #     m3 = m0
         #
-        out = self.out(M1, M2, M3, maskC)
+        out = self.out(intermediary1, intermediary2, intermediary3, c_mask)
         return out

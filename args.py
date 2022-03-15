@@ -147,27 +147,27 @@ def get_train_args():
     parser.add_argument('--n_encoder_blocks',
                         type=int,
                         default=7,
-                        help='Number of layers of encoder blocks in QANet.')
+                        help='Number of layers of encoder blocks .')
     parser.add_argument('--n_head',
                         type=int,
                         default=8,
-                        help='Number of attention heads in QANet.')
+                        help='Number of attention heads.')
     parser.add_argument('--d_model',
                         type=int,
                         default=128,
-                        help='Dimension of connectors in QANet.')
+                        help='Dimension of connectors.')
     parser.add_argument('--qanet_dropout',
                         type=float,
                         default=0.1,
-                        help='Probability of zeroing an activation in dropout layers.')
+                        help='Prob to zero an activation in dropout layer.')
     parser.add_argument('--qanet_char_dropout',
                         type=float,
                         default=0.05,
-                        help='Probability of zeroing an activation in dropout layers.')
+                        help='Prob to zero an activation in dropout lay.')
     parser.add_argument('--use_pretrained_char',
                         type=lambda s: s.lower().startswith('t'),
                         default=True,
-                        help='Whether to use pretrained character embeddings.')
+                        help='If we should use pretrained character embeddings.')
     parser.add_argument('--glove_num_vecs',
                         type=int,
                         default=2196017,

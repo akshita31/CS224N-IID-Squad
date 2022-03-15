@@ -72,17 +72,15 @@ def main(args):
     #                 char_vectors = char_vectors,
     #                 drop_prob=args.drop_prob)
     elif "qanet" in args.name:
-        model = QANet(word_mat=word_vectors,
-                      char_mat=char_vectors,
-                      n_encoder_blocks=args.n_encoder_blocks,
-                      n_head=args.n_head)
-# =======
+        model = QANet(word_vectors=word_vectors,
+                      char_vectors=char_vectors,
+                      number_of_encoder_blocks=args.n_encoder_blocks,
+                      number_of_heads=args.n_head)
 #     elif "qanet" in args.name:
 #         log.info('Training QANet')
 #         model = QANet(word_vectors=word_vectors,
 #                     char_vectors = char_vectors,
 #                     drop_prob=args.drop_prob)  
-# >>>>>>> main
     else:
         log.info('Performing training without using Character Embedding')
         model = BiDAF(word_vectors=word_vectors,

@@ -2,7 +2,7 @@ import args
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from layers_qanet import Highway, Initialized_Conv1d
+from layers_qanet import HighwayEncoder, FeedForwardHelper
 from util import masked_softmax
 
 class _CharEmbedding(nn.Module):
@@ -68,8 +68,8 @@ class QANetEmbedding(nn.Module):
        self.word_embed = nn.Embedding.from_pretrained(word_vectors)
        self.char_embed = _CharEmbedding(char_vectors=char_vectors, drop_prob=drop_prob, d_model = d_model, num_filters = num_filters, drop_char=drop_char)
        self.char_embed_dim = self.char_embed.GetCharEmbedDim()
-       self.resizer = Initialized_Conv1d(self.word_embed_size + self.char_embed_dim, d_model, bias=False)
-       self.hwy = Highway(2, d_model)
+       self.resizer = FeedForwardHelper(self.word_embed_size + self.char_embed_dim, d_model, bias=False)
+       self.hwy = HighwayEncoder(2, d_model)
        print('Using dropout for CharEmbedding as', drop_char)
        print('Using dropout for WordEmbed as', drop_prob)
 
