@@ -134,19 +134,10 @@ def main(args):
         lr = args.qanet_lr
         lr_warm_up_num = args.lr_warm_up_num
         # Optimizer
-
-        optimizer = optim.Adam(lr=base_lr, betas=(0.9, 0.999), eps=1e-7,
-
+        optimizer = optim.Adam(lr=base_lr, betas=(0.8, 0.999), eps=1e-7,
                                weight_decay=5e-8, params=parameters)
-
-        # LR scheduler
-
         cr = lr / math.log2(lr_warm_up_num)
-        scheduler = optim.lr_scheduler.LambdaLR(optimizer,
-
-                                                lr_lambda=lambda ee: cr * math.log2(ee + 1)
-
-                                                if ee < lr_warm_up_num else lr)
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda ee: cr * math.log2(ee + 1) if ee < lr_warm_up_num else lr)
 
     # Get data loader
     log.info('Building dataset...')

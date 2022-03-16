@@ -1,4 +1,2 @@
-1. QANet student paper reference - https://web.stanford.edu/class/archive/cs/cs224n/cs224n.1214/reports/final_reports/report269.pdf
-2. QANet Pytorch Implementation - https://github.com/BangLiu/QANet-PyTorch/tree/master/model
-
+QANet student paper reference - https://web.stanford.edu/class/archive/cs/cs224n/cs224n.1214/reports/final_reports/report269.pdf
 Reference for DepthWiseConv and how we are reducing the initial embedding dimension - https://github.com/heliumsea/QANet-pytorch/blob/master/models.py#L39
