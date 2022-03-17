@@ -8,7 +8,7 @@ import util
 from args import get_test_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF, QANet
+from models import BiDAF, BiDAFWithChar, QANet
 from os.path import join
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -33,10 +33,11 @@ def getModel(word_vectors,
     log.info('Building model...')
 
     if use_old_model:
-        model = QANet(word_mat=word_vectors, 
-        char_mat=char_vectors, 
-        n_encoder_blocks=n_encoder_blocks,
-        n_head = n_head)
+        model = BiDAFWithChar(word_vectors, char_vectors, args.hidden_size)
+        # model = QANet(word_mat=word_vectors, 
+        # char_mat=char_vectors, 
+        # n_encoder_blocks=n_encoder_blocks,
+        # n_head = n_head)
     else:
         print('Num is', num_encoder_conv)
         print('Num is', num_model_conv)
@@ -103,14 +104,14 @@ def majority_voting(log_p1_models, log_p2_models, weights, args):
         # print(preds_i)        
         sorted_ct_tuples = Counter(preds_i).most_common()
         
-        ans_starts.append(sorted_ct_tuples[0][0][0])
-        ans_ends.append(sorted_ct_tuples[0][0][1])
+        # ans_starts.append(sorted_ct_tuples[0][0][0])
+        # ans_ends.append(sorted_ct_tuples[0][0][1])
 
-        # max_freq = sorted_ct_tuples[0][1]
-        # ans_choices = [span for span,ct in sorted_ct_tuples if ct == max_freq]
-        # ans = random.choice(ans_choices)
-        # ans_starts.append(ans[0])
-        # ans_ends.append(ans[1])
+        max_freq = sorted_ct_tuples[0][1]
+        ans_choices = [span for span,ct in sorted_ct_tuples if ct == max_freq]
+        ans = random.choice(ans_choices)
+        ans_starts.append(ans[0])
+        ans_ends.append(ans[1])
         
         
 
@@ -299,11 +300,14 @@ def main(args_list, f1_scores, ensemble_method='weighted_avg'):
 
 
 if __name__ == '__main__':
-    checkpoints = ["/home/azureuser/CS224N-IID-Squad/save/train/qanetnew-char-embed-200-03/best.pth.tar",
+    checkpoints = ["/home/azureuser/CS224N-IID-Squad/save/train/qanet-ConditionalAttention-CharEmbed-200/best.pth.tar",
                     "/home/azureuser/CS224N-IID-Squad/save/train/qanetnew-light/best.pth.tar",
-                    "/home/azureuser/CS224N-IID-Squad/save/train/qanet-encoder-blocks-5/best.pth.tar"]
+                    "/home/azureuser/CS224N-IID-Squad/save/train/qanet-encoder-blocks-5/best.pth.tar",
+                    "/home/azureuser/CS224N-IID-Squad/save/train/qanetnew-Encoder-5-Head-4-CharEmbed200-01/best.pth.tar",
+                    "/home/azureuser/CS224N-IID-Squad/save/train/qanetnew-Encoder-7-Head-8-CharEmbed200-01/best.pth.tar",
+                    "/home/azureuser/CS224N-IID-Squad/save/train/CharEmbedding200d-WithBatchNorm-Relu-02/best.pth.tar"]
 
-    f1_scores=[69.02, 68.25, 67.95, 68.38 ]
+    f1_scores=[69.02, 68.25, 67.95, 68.22, 69.76, 66.88 ]
 
     num_models = len(checkpoints)
     args_list = []
@@ -318,25 +322,30 @@ if __name__ == '__main__':
             args.char_embed_dim = 200
             args.output_type = 'conditional_attention'
         elif i == 1:
-            print('Hey')
             args.n_encoder_blocks = 5
             args.n_head = 4
             args.char_embed_dim = 128
             args.output_type = 'conditional_attention'
             args.num_encoder_conv = 2
             args.num_model_conv = 1
-            print('Hey')
         elif i == 2:
             args.n_encoder_blocks = 5
             args.n_head = 8
             args.char_embed_dim = 128
             args.output_type = 'default'
         elif i == 3:
-            args.n_encoder_blocks = 7
+            args.n_encoder_blocks = 5
             args.n_head = 4
-            args.char_embed_dim = 128
-            args.output_type = 'default'
-            args.use_bidaf_att = False
+            args.char_embed_dim = 200
+            args.output_type = 'conditional_attention'
+        elif i == 4:
+            args.n_encoder_blocks = 7
+            args.n_head = 8
+            args.char_embed_dim = 200
+            args.output_type = 'conditional_attention'
+        elif i == 5:
+            args.use_old_model = True
+            
             #args.n_words = 88714
         #     args.use_char_emb = True
         #     args.use_attention = True
@@ -360,6 +369,6 @@ if __name__ == '__main__':
 
     #args_list =[args_list[i] for i in [1]]
     #f1_scores =[f1_scores[i] for i in [1]]
-    # ensemble_method ='weighted_avg' 
-    ensemble_method = 'majority_voting'
+    ensemble_method ='weighted_avg' 
+    #ensemble_method = 'majority_voting'
     main(args_list, f1_scores=f1_scores, ensemble_method=ensemble_method) # majority_voting
